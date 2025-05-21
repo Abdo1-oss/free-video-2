@@ -268,6 +268,8 @@ else:
                     photo_urls += search_pixabay_photos(kw)
                 if "Wikimedia" in sources_selected:
                     photo_urls += search_wikimedia_photos(kw)
+                st.write("روابط الفيديو:", video_urls)
+                st.write("روابط الصور:", photo_urls)
                 st.write("debug: تم جلب الصور والفيديو")
                 overlay_texts = [t.strip() for t in final_text.split('\n') if t.strip()]
                 audio_path = generate_voice(final_text, lang=lang_option)
@@ -332,5 +334,6 @@ else:
                             st.download_button(label="تحميل ملف المشروع", data=f, file_name="documentary_project.json", mime="application/json")
                 else:
                     st.error("عذراً، لم نتمكن من إنتاج الفيديو.")
+
             with st.spinner("جاري الإبداع ..."):
                 run_with_debug(creative_workflow)
