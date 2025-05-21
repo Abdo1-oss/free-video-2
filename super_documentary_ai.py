@@ -16,26 +16,19 @@ from transformers import pipeline
 # ==============================
 # أداة كشف الأخطاء البرمجية
 # ==============================
-
 def run_with_debug(func, *args, **kwargs):
-    """
-    يشغل أي دالة مع كشف الأخطاء، ويعرض تفاصيل الخطأ في Streamlit وفي سجل التطبيق.
-    """
     try:
         return func(*args, **kwargs)
     except Exception as e:
         st.error("حذراً، لم نتمكن من إنتاج الفيديو.")
         st.write("تفاصيل الخطأ البرمجي:")
         st.write(traceback.format_exc())
-        st.exception(e)  # <--- هذا السطر يضيف عرض الخطأ بشكل احترافي في Streamlit
+        st.exception(e)  # عرض الخطأ البرمجي بشكل واضح
         print(traceback.format_exc())
         return None
 
-# ==============================
-# باقي الكود كما هو ...
-# ==============================
+# بقية الأكواد كما هي (ذكاء اصطناعي، جلب صور، إنشاء فيديو ...)
 
-# إعدادات عامة ومصادر مجانية
 PEXELS_API_KEY = st.secrets.get("PEXELS_API_KEY", "")
 UNSPLASH_ACCESS_KEY = st.secrets.get("UNSPLASH_ACCESS_KEY", "")
 PIXABAY_API_KEY = st.secrets.get("PIXABAY_API_KEY", "")
