@@ -1,0 +1,10 @@
+streamlit
+requests
+moviepy
+Pillow
+gtts
+googletrans==4.0.0rc1
+wikipedia
+transformers
+torch
+sentencepiece
