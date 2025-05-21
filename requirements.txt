@@ -8,3 +8,5 @@ googletrans==4.0.0rc1
 transformers
 tensorflow==2.15.0
 ffmpeg-python
+imageio
+imageio-ffmpeg
