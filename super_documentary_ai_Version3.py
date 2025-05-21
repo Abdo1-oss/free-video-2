@@ -27,21 +27,18 @@ def run_with_debug(func, *args, **kwargs):
         st.error("حذراً، لم نتمكن من إنتاج الفيديو.")
         st.write("تفاصيل الخطأ البرمجي:")
         st.write(traceback.format_exc())
+        st.exception(e)  # <--- هذا السطر يضيف عرض الخطأ بشكل احترافي في Streamlit
         print(traceback.format_exc())
         return None
 
 # ==============================
-# إعدادات عامة ومصادر مجانية
+# باقي الكود كما هو ...
 # ==============================
 
-# مفاتيح API (اجعلها في secrets في Streamlit Cloud)
+# إعدادات عامة ومصادر مجانية
 PEXELS_API_KEY = st.secrets.get("PEXELS_API_KEY", "")
 UNSPLASH_ACCESS_KEY = st.secrets.get("UNSPLASH_ACCESS_KEY", "")
 PIXABAY_API_KEY = st.secrets.get("PIXABAY_API_KEY", "")
-
-# ==============================
-# أدوات الذكاء الاصطناعي للنصوص
-# ==============================
 
 @st.cache_resource
 def get_summarizer():
@@ -64,10 +61,6 @@ def translate_text(text, dest_lang):
         return translator.translate(text, dest=dest_lang).text
     except:
         return text
-
-# ==============================
-# مصادر الصور والفيديوهات المجانية
-# ==============================
 
 def search_pexels_videos(query, per_page=2):
     if not PEXELS_API_KEY: return []
@@ -101,19 +94,11 @@ def search_wikimedia_photos(query, limit=2):
     pages = response.json().get("query", {}).get("pages", {})
     return [v["imageinfo"][0]["url"] for v in pages.values() if "imageinfo" in v]
 
-# ==============================
-# توليد الصوت (gTTS)
-# ==============================
-
 def generate_voice(text, lang="en"):
     tts = gTTS(text=text, lang=lang)
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
     tts.save(tmp.name)
     return tmp.name
-
-# ==============================
-# مؤثر Ken Burns للصور
-# ==============================
 
 def ken_burns_effect(image_path, duration=5, zoom=1.2):
     clip = ImageClip(image_path)
@@ -123,10 +108,6 @@ def ken_burns_effect(image_path, duration=5, zoom=1.2):
             .set_position(lambda t: ('center', int(0.5*(h - h*(1 + (zoom-1)*t/duration)))))
             .set_duration(duration)
     )
-
-# ==============================
-# كتابة نص على صورة
-# ==============================
 
 def add_text_to_image(image_path, text, output_path="output_img.png", color="#FFFFFF", size=28, pos="bottom"):
     image = Image.open(image_path).convert("RGBA")
@@ -151,10 +132,6 @@ def add_text_to_image(image_path, text, output_path="output_img.png", color="#FF
     image.save(output_path)
     return output_path
 
-# ==============================
-# توليد ملف SRT للتعليقات
-# ==============================
-
 def generate_srt(text, lang, duration, output_path="output.srt"):
     lines = [l for l in text.split('\n') if l.strip()]
     per_line = max(duration // (len(lines) or 1), 2)
@@ -167,20 +144,14 @@ def generate_srt(text, lang, duration, output_path="output.srt"):
         f.write(srt)
     return output_path
 
-# ==============================
-# إنشاء الفيديو النهائي
-# ==============================
-
 def create_final_video(video_urls, photo_urls, audio_path, logo_path=None, music_path=None,
                       output_path="final_output.mp4", video_duration=120, overlay_texts=[],
                       watermark_text="", color="#FFFFFF", text_size=28, text_pos="bottom", gif_export=False, square_export=False):
     clips = []
-    # فيديوهات أولاً
     for url in video_urls:
         try:
             clips.append(VideoFileClip(url).subclip(0, min(video_duration, 10)))
         except: pass
-    # لو لا يوجد فيديوهات نستخدم الصور
     if not clips and photo_urls:
         duration_per_image = max(video_duration // (len(photo_urls) or 1), 2)
         for i, url in enumerate(photo_urls):
@@ -189,7 +160,6 @@ def create_final_video(video_urls, photo_urls, audio_path, logo_path=None, music
             with open(img_path, "wb") as f: f.write(img_data)
             if overlay_texts and i < len(overlay_texts):
                 img_path = add_text_to_image(img_path, overlay_texts[i], color=color, size=text_size, pos=text_pos)
-            # مؤثر Ken Burns
             img_clip = ken_burns_effect(img_path, duration=duration_per_image)
             clips.append(img_clip)
     if not clips:
@@ -197,23 +167,19 @@ def create_final_video(video_urls, photo_urls, audio_path, logo_path=None, music
     final_clip = concatenate_videoclips(clips, method="compose")
     audio_clip = AudioFileClip(audio_path)
     final_clip = final_clip.set_audio(audio_clip).subclip(0, audio_clip.duration)
-    # موسيقى مجانية في الخلفية
     if music_path:
         try:
             music_clip = AudioFileClip(music_path).volumex(0.15)
             final_audio = CompositeAudioClip([final_clip.audio, music_clip])
             final_clip = final_clip.set_audio(final_audio)
         except: pass
-    # إضافة الشعار
     if logo_path:
         logo = (ImageClip(logo_path)
                 .set_duration(final_clip.duration)
                 .resize(height=50)
                 .set_pos(("right", "top")).margin(right=8, top=8, opacity=0))
         final_clip = CompositeVideoClip([final_clip, logo])
-    # مؤثرات انتقالية
     final_clip = final_clip.fadein(1).fadeout(1)
-    # علامة مائية نصية
     if watermark_text:
         txt_clip = (TextClip(watermark_text, fontsize=24, color='white', font='Arial-Bold', bg_color='black', size=(final_clip.size[0], 30))
                     .set_position(("center", "bottom")).set_duration(final_clip.duration).set_opacity(0.4))
@@ -232,10 +198,6 @@ def create_final_video(video_urls, photo_urls, audio_path, logo_path=None, music
     final_clip.close()
     return output_path
 
-# ==============================
-# حفظ واسترجاع المشروع
-# ==============================
-
 def save_project(project_data, path="my_project.json"):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(project_data, f, ensure_ascii=False, indent=2)
@@ -243,10 +205,6 @@ def save_project(project_data, path="my_project.json"):
 def load_project(path="my_project.json"):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
-
-# ==============================
-# واجهة المستخدم عبر Streamlit
-# ==============================
 
 st.set_page_config(page_title="وثائقي خارق بالذكاء الاصطناعي", layout="wide")
 st.title("🎬 وثائقي خارق | Super Documentary AI")
@@ -286,15 +244,12 @@ else:
             st.error("يرجى إدخال كلمة مفتاحية أو نص الوثائقي.")
         else:
             def creative_workflow():
-                # 1) تلخيص أو توليد نص
                 if script_text.strip():
                     final_text = summarize_text(script_text)
                 else:
                     final_text = suggest_text_from_keyword(kw, lang=lang_option)
-                # 2) ترجمة
                 if lang_option != "en":
                     final_text = translate_text(final_text, lang_option)
-                # 3) جلب صور وفيديو
                 video_urls, photo_urls = [], []
                 if "Pexels" in sources_selected:
                     video_urls += search_pexels_videos(kw)
@@ -305,11 +260,8 @@ else:
                     photo_urls += search_pixabay_photos(kw)
                 if "Wikimedia" in sources_selected:
                     photo_urls += search_wikimedia_photos(kw)
-                # 4) نصوص على الصور
                 overlay_texts = [t.strip() for t in final_text.split('\n') if t.strip()]
-                # 5) توليد صوت
                 audio_path = generate_voice(final_text, lang=lang_option)
-                # 6) ملفات إضافية
                 logo_path = None
                 if logo_file:
                     logo_path = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
@@ -323,7 +275,6 @@ else:
                         f.write(music_file.read())
                 output_video_path = f"output_{int(time.time())}.mp4"
                 duration = video_length_option*60 if not short_video else 60
-                # 7) فيديو نهائي
                 final_video = create_final_video(
                     video_urls=video_urls,
                     photo_urls=photo_urls,
@@ -340,7 +291,6 @@ else:
                     gif_export=gif_export,
                     square_export=square_export
                 )
-                # 8) توليد SRT
                 srt_path = generate_srt(final_text, lang_option, duration)
                 if final_video:
                     st.success("تم الإنشاء! شاهد نتيجتك 👇")
@@ -357,7 +307,6 @@ else:
                         sq_path = output_video_path.replace(".mp4", "_square.mp4")
                         with open(sq_path, "rb") as f:
                             st.download_button(label="تحميل فيديو مربع", data=f, file_name="documentary_video_square.mp4", mime="video/mp4")
-                    # حفظ المشروع
                     if save_proj:
                         project_data = {
                             "kw": kw, "final_text": final_text, "lang": lang_option,
