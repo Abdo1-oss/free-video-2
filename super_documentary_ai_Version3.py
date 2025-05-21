@@ -4,6 +4,7 @@ import tempfile
 import os
 import time
 import json
+import traceback
 
 from moviepy.editor import VideoFileClip, concatenate_videoclips, ImageClip, CompositeVideoClip, AudioFileClip, TextClip
 from PIL import Image, ImageDraw, ImageFont
@@ -11,6 +12,23 @@ from gtts import gTTS
 from googletrans import Translator
 import wikipedia
 from transformers import pipeline
+
+# ==============================
+# أداة كشف الأخطاء البرمجية
+# ==============================
+
+def run_with_debug(func, *args, **kwargs):
+    """
+    يشغل أي دالة مع كشف الأخطاء، ويعرض تفاصيل الخطأ في Streamlit وفي سجل التطبيق.
+    """
+    try:
+        return func(*args, **kwargs)
+    except Exception as e:
+        st.error("حذراً، لم نتمكن من إنتاج الفيديو.")
+        st.write("تفاصيل الخطأ البرمجي:")
+        st.write(traceback.format_exc())
+        print(traceback.format_exc())
+        return None
 
 # ==============================
 # إعدادات عامة ومصادر مجانية
@@ -267,7 +285,7 @@ else:
         if not kw and not script_text.strip():
             st.error("يرجى إدخال كلمة مفتاحية أو نص الوثائقي.")
         else:
-            with st.spinner("جاري الإبداع ..."):
+            def creative_workflow():
                 # 1) تلخيص أو توليد نص
                 if script_text.strip():
                     final_text = summarize_text(script_text)
@@ -353,3 +371,6 @@ else:
                             st.download_button(label="تحميل ملف المشروع", data=f, file_name="documentary_project.json", mime="application/json")
                 else:
                     st.error("عذراً، لم نتمكن من إنتاج الفيديو.")
+
+            with st.spinner("جاري الإبداع ..."):
+                run_with_debug(creative_workflow)
