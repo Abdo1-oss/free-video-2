@@ -27,8 +27,6 @@ def run_with_debug(func, *args, **kwargs):
         print(traceback.format_exc())
         return None
 
-# بقية الأكواد كما هي (ذكاء اصطناعي، جلب صور، إنشاء فيديو ...)
-
 PEXELS_API_KEY = st.secrets.get("PEXELS_API_KEY", "")
 UNSPLASH_ACCESS_KEY = st.secrets.get("UNSPLASH_ACCESS_KEY", "")
 PIXABAY_API_KEY = st.secrets.get("PIXABAY_API_KEY", "")
@@ -237,6 +235,7 @@ else:
             st.error("يرجى إدخال كلمة مفتاحية أو نص الوثائقي.")
         else:
             def creative_workflow():
+                st.write("بدأ التنفيذ!")  # سطر التحقق
                 if script_text.strip():
                     final_text = summarize_text(script_text)
                 else:
