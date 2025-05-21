@@ -13,9 +13,6 @@ from googletrans import Translator
 import wikipedia
 from transformers import pipeline
 
-# ==============================
-# أداة كشف الأخطاء البرمجية
-# ==============================
 def run_with_debug(func, *args, **kwargs):
     try:
         return func(*args, **kwargs)
@@ -23,7 +20,7 @@ def run_with_debug(func, *args, **kwargs):
         st.error("حذراً، لم نتمكن من إنتاج الفيديو.")
         st.write("تفاصيل الخطأ البرمجي:")
         st.write(traceback.format_exc())
-        st.exception(e)  # عرض الخطأ البرمجي بشكل واضح
+        st.exception(e)
         print(traceback.format_exc())
         return None
 
@@ -36,10 +33,12 @@ def get_summarizer():
     return pipeline("summarization", model="facebook/bart-large-cnn")
 
 def summarize_text(text):
+    st.write("debug: summarize_text() called")
     summarizer = get_summarizer()
     return summarizer(text, max_length=180, min_length=60, do_sample=False)[0]['summary_text']
 
 def suggest_text_from_keyword(keyword, lang="en"):
+    st.write("debug: suggest_text_from_keyword() called")
     wikipedia.set_lang(lang)
     try:
         return wikipedia.summary(keyword, sentences=4)
@@ -47,6 +46,7 @@ def suggest_text_from_keyword(keyword, lang="en"):
         return f"No summary found for {keyword}."
 
 def translate_text(text, dest_lang):
+    st.write("debug: translate_text() called")
     try:
         translator = Translator()
         return translator.translate(text, dest=dest_lang).text
@@ -54,6 +54,7 @@ def translate_text(text, dest_lang):
         return text
 
 def search_pexels_videos(query, per_page=2):
+    st.write("debug: search_pexels_videos() called")
     if not PEXELS_API_KEY: return []
     headers = {"Authorization": PEXELS_API_KEY}
     url = f"https://api.pexels.com/videos/search?query={query}&per_page={per_page}"
@@ -61,6 +62,7 @@ def search_pexels_videos(query, per_page=2):
     return [v["video_files"][0]["link"] for v in data.get("videos", []) if v.get("video_files")]
 
 def search_pexels_photos(query, per_page=3):
+    st.write("debug: search_pexels_photos() called")
     if not PEXELS_API_KEY: return []
     headers = {"Authorization": PEXELS_API_KEY}
     url = f"https://api.pexels.com/v1/search?query={query}&per_page={per_page}"
@@ -68,30 +70,35 @@ def search_pexels_photos(query, per_page=3):
     return [photo["src"]["large"] for photo in data.get("photos", [])]
 
 def search_unsplash_photos(query, per_page=3):
+    st.write("debug: search_unsplash_photos() called")
     if not UNSPLASH_ACCESS_KEY: return []
     url = f"https://api.unsplash.com/search/photos?query={query}&per_page={per_page}&client_id={UNSPLASH_ACCESS_KEY}"
     data = requests.get(url).json()
     return [photo["urls"]["regular"] for photo in data.get("results", [])]
 
 def search_pixabay_photos(query, per_page=3):
+    st.write("debug: search_pixabay_photos() called")
     if not PIXABAY_API_KEY: return []
     url = f"https://pixabay.com/api/?key={PIXABAY_API_KEY}&q={query}&per_page={per_page}&image_type=photo"
     data = requests.get(url).json()
     return [hit["largeImageURL"] for hit in data.get("hits", [])]
 
 def search_wikimedia_photos(query, limit=2):
+    st.write("debug: search_wikimedia_photos() called")
     url = f"https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch={query}&gsrlimit={limit}&prop=imageinfo&iiprop=url&format=json"
     response = requests.get(url)
     pages = response.json().get("query", {}).get("pages", {})
     return [v["imageinfo"][0]["url"] for v in pages.values() if "imageinfo" in v]
 
 def generate_voice(text, lang="en"):
+    st.write("debug: generate_voice() called")
     tts = gTTS(text=text, lang=lang)
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
     tts.save(tmp.name)
     return tmp.name
 
 def ken_burns_effect(image_path, duration=5, zoom=1.2):
+    st.write("debug: ken_burns_effect() called")
     clip = ImageClip(image_path)
     w, h = clip.size
     return (clip
@@ -101,6 +108,7 @@ def ken_burns_effect(image_path, duration=5, zoom=1.2):
     )
 
 def add_text_to_image(image_path, text, output_path="output_img.png", color="#FFFFFF", size=28, pos="bottom"):
+    st.write("debug: add_text_to_image() called")
     image = Image.open(image_path).convert("RGBA")
     draw = ImageDraw.Draw(image)
     try:
@@ -124,6 +132,7 @@ def add_text_to_image(image_path, text, output_path="output_img.png", color="#FF
     return output_path
 
 def generate_srt(text, lang, duration, output_path="output.srt"):
+    st.write("debug: generate_srt() called")
     lines = [l for l in text.split('\n') if l.strip()]
     per_line = max(duration // (len(lines) or 1), 2)
     srt = ""
@@ -138,6 +147,7 @@ def generate_srt(text, lang, duration, output_path="output.srt"):
 def create_final_video(video_urls, photo_urls, audio_path, logo_path=None, music_path=None,
                       output_path="final_output.mp4", video_duration=120, overlay_texts=[],
                       watermark_text="", color="#FFFFFF", text_size=28, text_pos="bottom", gif_export=False, square_export=False):
+    st.write("debug: create_final_video() called")
     clips = []
     for url in video_urls:
         try:
@@ -190,10 +200,12 @@ def create_final_video(video_urls, photo_urls, audio_path, logo_path=None, music
     return output_path
 
 def save_project(project_data, path="my_project.json"):
+    st.write("debug: save_project() called")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(project_data, f, ensure_ascii=False, indent=2)
 
 def load_project(path="my_project.json"):
+    st.write("debug: load_project() called")
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -205,6 +217,7 @@ mode = st.radio("نوع المشروع", ["ابدأ مشروع جديد", "اس�
 if mode == "استرجع مشروع من ملف":
     uploaded_project = st.file_uploader("ارفع ملف المشروع (json):", type="json")
     if uploaded_project:
+        st.write("debug: project loaded")
         project_data = json.load(uploaded_project)
         st.success("تم استرجاع المشروع!")
         st.json(project_data)
@@ -231,17 +244,20 @@ else:
     save_proj = st.checkbox("حفظ المشروع كملف (للاستكمال لاحقاً)", value=False)
 
     if st.button("ابدأ الإبداع!"):
+        st.write("debug: زر ابدأ الإبداع ضغط")
         if not kw and not script_text.strip():
             st.error("يرجى إدخال كلمة مفتاحية أو نص الوثائقي.")
         else:
             def creative_workflow():
-                st.write("بدأ التنفيذ!")  # سطر التحقق
+                st.write("debug: بدأ التنفيذ في creative_workflow")
                 if script_text.strip():
                     final_text = summarize_text(script_text)
                 else:
                     final_text = suggest_text_from_keyword(kw, lang=lang_option)
+                st.write("debug: تم تلخيص/جلب النص")
                 if lang_option != "en":
                     final_text = translate_text(final_text, lang_option)
+                st.write("debug: تمت الترجمة")
                 video_urls, photo_urls = [], []
                 if "Pexels" in sources_selected:
                     video_urls += search_pexels_videos(kw)
@@ -252,8 +268,10 @@ else:
                     photo_urls += search_pixabay_photos(kw)
                 if "Wikimedia" in sources_selected:
                     photo_urls += search_wikimedia_photos(kw)
+                st.write("debug: تم جلب الصور والفيديو")
                 overlay_texts = [t.strip() for t in final_text.split('\n') if t.strip()]
                 audio_path = generate_voice(final_text, lang=lang_option)
+                st.write("debug: تم توليد الصوت")
                 logo_path = None
                 if logo_file:
                     logo_path = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
@@ -265,6 +283,7 @@ else:
                     music_file.seek(0)
                     with open(music_path, "wb") as f:
                         f.write(music_file.read())
+                st.write("debug: تم تجهيز الشعار والموسيقى")
                 output_video_path = f"output_{int(time.time())}.mp4"
                 duration = video_length_option*60 if not short_video else 60
                 final_video = create_final_video(
@@ -283,6 +302,7 @@ else:
                     gif_export=gif_export,
                     square_export=square_export
                 )
+                st.write("debug: تم إنتاج الفيديو")
                 srt_path = generate_srt(final_text, lang_option, duration)
                 if final_video:
                     st.success("تم الإنشاء! شاهد نتيجتك 👇")
@@ -312,6 +332,5 @@ else:
                             st.download_button(label="تحميل ملف المشروع", data=f, file_name="documentary_project.json", mime="application/json")
                 else:
                     st.error("عذراً، لم نتمكن من إنتاج الفيديو.")
-
             with st.spinner("جاري الإبداع ..."):
                 run_with_debug(creative_workflow)
