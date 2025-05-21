@@ -244,7 +244,7 @@ else:
     save_proj = st.checkbox("حفظ المشروع كملف (للاستكمال لاحقاً)", value=False)
 
     if st.button("ابدأ الإبداع!"):
-        st.write("debug: زر ابدأ الإبداع ضغط")
+        st.write("debug: زر ابدأ الإبداع مضغوط")
         if not kw and not script_text.strip():
             st.error("يرجى إدخال كلمة مفتاحية أو نص الوثائقي.")
         else:
@@ -268,8 +268,16 @@ else:
                     photo_urls += search_pixabay_photos(kw)
                 if "Wikimedia" in sources_selected:
                     photo_urls += search_wikimedia_photos(kw)
+                st.write("=== DEBUG قبل طباعة الروابط ===")
                 st.write("روابط الفيديو:", video_urls)
+                st.write("عدد روابط الفيديو:", len(video_urls))
+                if not video_urls:
+                    st.write("تحذير: قائمة الفيديوهات فارغة")
                 st.write("روابط الصور:", photo_urls)
+                st.write("عدد روابط الصور:", len(photo_urls))
+                if not photo_urls:
+                    st.write("تحذير: قائمة الصور فارغة")
+                st.write("=== DEBUG بعد طباعة الروابط ===")
                 st.write("debug: تم جلب الصور والفيديو")
                 overlay_texts = [t.strip() for t in final_text.split('\n') if t.strip()]
                 audio_path = generate_voice(final_text, lang=lang_option)
