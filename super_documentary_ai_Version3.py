@@ -13,22 +13,17 @@ import random
 import wave
 import struct
 
-import moviepy.config as mpy_conf
-mpy_conf.change_settings({"IMAGEMAGICK_BINARY": r"C:\\Program Files\\ImageMagick\\magick.exe"})
-
 try:
     nltk.data.find('tokenizers/punkt')
 except LookupError:
     nltk.download('punkt')
 
-PEXELS_API_KEY = "pLcIoo3oNdhqna28AfdaBYhkE3SFps9oRGuOsxY3JTe92GcVDZpwZE9i"
-UNSPLASH_ACCESS_KEY = "SDK5avSHNm9lcNhhLhT_SzUdzd98hYX0BVjswi3ZHzU"
-PIXABAY_API_KEY = "50380897-76243eaec536038f687ff8e15"
-COHERE_API_KEY = "K1GW0y2wWiwW7xlK7db7zZnqX7sxfRVGiWopVfCD"
+PEXELS_API_KEY = st.secrets.get("PEXELS_API_KEY", "")
+UNSPLASH_ACCESS_KEY = st.secrets.get("UNSPLASH_ACCESS_KEY", "")
+PIXABAY_API_KEY = st.secrets.get("PIXABAY_API_KEY", "")
+COHERE_API_KEY = st.secrets.get("COHERE_API_KEY", "")
 
 GTTS_VOICES = [
-    {"name": "عربي (سعودي) - أنثى", "lang": "ar", "tld": "com.sa"},
-    {"name": "عربي (مصر) - أنثى", "lang": "ar", "tld": "com.eg"},
     {"name": "English (US) - Female", "lang": "en", "tld": "com"},
     {"name": "English (UK) - Female", "lang": "en", "tld": "co.uk"},
     {"name": "French (France) - Female", "lang": "fr", "tld": "fr"},
@@ -124,27 +119,27 @@ def generate_script_with_cohere(prompt, max_tokens=1000, temperature=0.7, model=
     if response.status_code == 200:
         return response.json()["generations"][0]["text"]
     else:
-        st.error(f"خطأ من Cohere API: {response.status_code}\n{response.text}")
+        st.error(f"Cohere API error: {response.status_code}\n{response.text}")
         return ""
 
-def generate_script_from_media_cohere(media_list, topic, lang="ar", max_tokens=1000, temperature=0.4):
-    prompt = f"""لدي مجموعة صور وفيديوهات حول موضوع "{topic}":\n"""
+def generate_script_from_media_cohere(media_list, topic, lang="en", max_tokens=1000, temperature=0.4):
+    prompt = f"""I have a collection of photos and videos about "{topic}":\n"""
     for i, (_, url, desc) in enumerate(media_list, 1):
         prompt += f"{i}. {desc.strip()}\n"
     prompt += f"""
-اكتب نصًا وثائقيًا قصيرًا مترابطًا ومتسلسلًا يغطي جميع هذه الصور والفيديوهات بالترتيب، بحيث تكمّل كل جملة الجملة التي قبلها، ويبدو النص كقصة أو شرح واحد متسق، دون ذكر كلمة "صورة" أو "مشهد" أو أرقام، ودون تكرار أو انقطاع.
+Write a short, smooth, documentary script (one story, not disconnected sentences) that covers these photos and videos in order, without mentioning the word "photo", "scene", or numbers, and no repetition.
 """
     return generate_script_with_cohere(prompt, max_tokens=max_tokens, temperature=temperature)
 
 def filter_script_sentences(raw_text, num_media):
-    sentences = re.split(r'[.!؟\n]', raw_text)
+    try:
+        sentences = nltk.sent_tokenize(raw_text)
+    except Exception:
+        sentences = raw_text.split('.')
     sentences = [s.strip() for s in sentences if s.strip()]
-    ignore = [
-        "الصورة", "المشهد", "في هذا المشهد", "في هذه الصورة", "رقم", "media", "picture", "image", "scene", "مشهد:", "صورة:"
-    ]
     filtered = []
     for s in sentences:
-        if not any(kw in s.lower() for kw in ignore) and len(s) > 5:
+        if len(s) > 5:
             filtered.append(s)
     if len(filtered) > num_media:
         filtered = filtered[:num_media]
@@ -162,23 +157,31 @@ def get_audio_duration(audio_path):
         print(f"Audio duration error: {e}")
         return 2
 
-def animated_text_clip(img_clip, text, duration, lang="ar", mode="word", group_size=3, font_size=40, color="white", text_pos="bottom"):
-    words = text.split()
-    if mode == "group":
-        items = [' '.join(words[i:i+group_size]) for i in range(0, len(words), group_size)]
-    else:
-        items = words
-    item_dur = duration / max(len(items), 1)
+def animated_text_clip(img_clip, text, duration, lang="en", mode="sentence", group_size=1, font_size=40, color="white", text_pos="bottom"):
+    items = [text]
+    item_dur = duration
     txt_clips = []
     for i, item in enumerate(items):
         font = "Arial"
-        if lang == "ar":
-            font = "Cairo"
+        if lang == "fr":
+            font = "Liberation-Serif"
         txt = TextClip(
             item, fontsize=font_size, color=color, font=font,
             size=img_clip.size, method='caption', align='center'
-        )
-        txt = txt.set_duration(item_dur).set_start(i * item_dur).set_position(("center", text_pos))
+        ).set_duration(item_dur).set_start(i * item_dur)
+        margin = 30
+        try:
+            h = txt.h
+        except:
+            h = font_size + 10
+        if text_pos == "bottom":
+            txt = txt.set_position(("center", img_clip.h - h - margin))
+        elif text_pos == "top":
+            txt = txt.set_position(("center", margin))
+        elif text_pos == "center":
+            txt = txt.set_position("center")
+        else:
+            txt = txt.set_position(text_pos)
         txt_clips.append(txt)
     return CompositeVideoClip([img_clip] + txt_clips).set_duration(duration)
 
@@ -190,23 +193,25 @@ def resize_and_letterbox(img_clip, target_w=1280, target_h=720):
         img_clip = img_clip.margin(left=(target_w-img_clip.w)//2, right=(target_w-img_clip.w)//2, color=(0,0,0))
     return img_clip
 
-def random_watermark_positions(duration, w, h, txt_w=200, txt_h=30, step=2):
+def random_watermark_positions(duration, w, h, txt_w=200, txt_h=30, step=0.5):
     positions = []
-    for t in range(0, int(duration), step):
+    t = 0
+    while t < duration:
         x = random.randint(0, max(0, w-txt_w))
         y = random.randint(0, max(0, h-txt_h))
         positions.append((t, (x, y)))
+        t += step
     return positions
 
 def choose_music_for_topic(topic):
     topic = topic.lower()
-    if "طبيعة" in topic or "nature" in topic:
+    if "nature" in topic:
         return "music/nature.mp3"
-    elif "سيارة" in topic or "car" in topic:
+    elif "car" in topic:
         return "music/cars.mp3"
-    elif "فضاء" in topic or "space" in topic:
+    elif "space" in topic:
         return "music/space.mp3"
-    elif "تاريخ" in topic or "history" in topic:
+    elif "history" in topic:
         return "music/history.mp3"
     else:
         return "music/default.mp3"
@@ -226,9 +231,9 @@ def safe_tts_save(text, mp3_path, lang, tld):
     tts.save(mp3_path)
 
 def assemble_video(
-    montage, out_path="final_montage.mp4", color="#FFFFFF", text_size=32, text_pos="bottom",
+    montage, out_path, color="#FFFFFF", text_size=32, text_pos="bottom",
     logo_path=None, music_path=None, watermark_text="", gif_export=False, square_export=False, youtube_export=False,
-    text_anim_mode="word", text_anim_group_size=3, text_anim_lang="ar"
+    text_anim_mode="sentence", text_anim_group_size=1, text_anim_lang="en"
 ):
     clips = []
     audio_clips = []
@@ -266,15 +271,11 @@ def assemble_video(
         if media_type == "image":
             img_path = media_url
             if isinstance(img_path, str) and img_path.startswith("http"):
-                img_path_local = os.path.join(st.session_state['save_dir'], f"img_{random.randint(1000,9999)}.jpg")
-                try:
-                    img_data = requests.get(img_path, timeout=10).content
-                    with open(img_path_local, "wb") as f:
-                        f.write(img_data)
-                    img_path = img_path_local
-                except Exception as e:
-                    print(f"Image download error: {e}")
-                    continue
+                tmp_img = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+                img_data = requests.get(img_path, timeout=10).content
+                tmp_img.write(img_data)
+                tmp_img.close()
+                img_path = tmp_img.name
             img_clip = ImageClip(img_path)
             img_clip = resize_and_letterbox(img_clip, target_w=1280, target_h=720)
             img_clip = img_clip.set_duration(duration)
@@ -291,7 +292,7 @@ def assemble_video(
             )
             clips.append(anim_txt)
     if not clips or not audio_clips:
-        st.error("لم يتم بناء الفيديو النهائي بسبب مشاكل في التحويل أو الدمج.")
+        st.error("Could not build the final video.")
         return None, None
     final_audio = concatenate_audioclips(audio_clips)
     final_clip = concatenate_videoclips(clips, method="compose")
@@ -321,18 +322,17 @@ def assemble_video(
     if watermark_text:
         try:
             txt_clip = TextClip(
-                watermark_text, fontsize=24, color='white', font='Arial-Bold', bg_color='black',
+                watermark_text, fontsize=24, color='white', font='Arial-Bold',
                 size=(200, 30)
             ).set_duration(final_clip.duration).set_opacity(0.4)
-            positions = random_watermark_positions(final_clip.duration, final_clip.w, final_clip.h, 200, 30, step=2)
+            positions = random_watermark_positions(final_clip.duration, final_clip.w, final_clip.h, 200, 30, step=0.5)
             def moving_position(t):
-                idx = int(t // 2)
+                idx = int(t // 0.5)
                 return positions[idx][1] if idx < len(positions) else positions[-1][1]
             txt_clip = txt_clip.set_position(moving_position)
             final_clip = CompositeVideoClip([final_clip, txt_clip])
         except Exception as e:
-            print(f"تعذر إنشاء العلامة المائية المتحركة: {e}")
-            st.warning("تعذر إضافة العلامة المائية بسبب مشكلة في ImageMagick أو MoviePy.")
+            print(f"Watermark error: {e}")
     final_clip = final_clip.fadein(1).fadeout(1)
     final_clip.write_videofile(out_path, codec="libx264", audio_codec="aac", preset="ultrafast", threads=4, fps=15)
     for c in clips:
@@ -342,85 +342,70 @@ def assemble_video(
     final_clip.close()
     return out_path, final_audio.duration
 
-st.set_page_config(page_title="وثائقي Cohere (صور وفيديو) | متطور", layout="wide")
-st.title("🎬 وثائقي Cohere (صور وفيديو) | متطور مع نص متحرك وWatermark متحركة وموسيقى تلقائية")
+st.set_page_config(page_title="AI Documentary Generator", layout="wide")
+st.title("🎬 AI Documentary Generator (Images, Video, Voice-over)")
 
-save_dir = st.text_input("مكان حفظ الملفات (مجلد):", value=r"C:\Users\Computec\Desktop\OUTPUTS")
-if not os.path.exists(save_dir):
-    os.makedirs(save_dir, exist_ok=True)
-st.session_state['save_dir'] = save_dir
+mode = st.radio("Project Type", ["New Project", "Restore Project"])
 
-mode = st.radio("نوع المشروع", ["ابدأ مشروع جديد", "استرجع مشروع من ملف"])
-
-if mode == "استرجع مشروع من ملف":
-    uploaded_project = st.file_uploader("ارفع ملف المشروع (json):", type="json")
+if mode == "Restore Project":
+    uploaded_project = st.file_uploader("Upload project file (json):", type="json")
     if uploaded_project:
         project_data = json.load(uploaded_project)
-        st.success("تم استرجاع المشروع!")
+        st.success("Project restored!")
         st.json(project_data)
 else:
-    st.markdown("**اكتب موضوع الفيديو أو السكربت، وحدد عدد المشاهد، واختر مصادر الصور والفيديو، ودع الذكاء الاصطناعي يصنع لك فيلم وثائقي تلقائياً!**")
-    topic = st.text_input("موضوع الفيديو (مثال: السيارات الذكية)")
+    st.markdown("**Enter your topic, choose number of scenes, select media sources, and let AI create a documentary video!**")
+    topic = st.text_input("Video topic (e.g., Smart Cars)")
     st.session_state["topic"] = topic
-    num_media = st.slider("عدد الصور/المشاهد:", min_value=2, max_value=100, value=5)
-    lang_option = st.selectbox("لغة السكربت:", ["ar", "en", "fr", "es", "de", "ru"], index=0)
+    num_media = st.slider("Number of scenes:", min_value=2, max_value=30, value=5)
     script_mode = st.radio(
-        "طريقة الحصول على السكربت:",
-        ["إنشاء السكربت تلقائيًا (Cohere)", "إنشاء السكربت بناءً على الوسائط (Cohere)", "أكتب السكربت بنفسي"], index=0)
+        "Script source:",
+        ["AI-generated script (Cohere)", "Script from media (Cohere)", "Write script manually"], index=0)
     script_text = ""
-    cohere_tokens = st.slider("عدد الكلمات التقريبي للسكريبت:", 100, 4000, 1000, step=50)
-    cohere_temp = st.slider("درجة الإبداع:", 0.1, 1.0, 0.4, step=0.05)
-    if script_mode == "أكتب السكربت بنفسي":
-        script_text = st.text_area("اكتب السكربت هنا:", height=300)
+    cohere_tokens = st.slider("Approximate script length (tokens):", 100, 4000, 1000, step=50)
+    cohere_temp = st.slider("Creativity:", 0.1, 1.0, 0.4, step=0.05)
+    if script_mode == "Write script manually":
+        script_text = st.text_area("Write your documentary script here:", height=300)
     sources_selected = st.multiselect(
-        "مصادر الصور والفيديو:",
+        "Photo/Video sources:",
         options=["Pexels", "Unsplash", "Pixabay", "Wikimedia"],
         default=["Pexels", "Unsplash", "Pixabay", "Wikimedia"]
     )
-    logo_file = st.file_uploader("شعار الفيديو (اختياري):", type=["png", "jpg", "jpeg"])
-    music_file = st.file_uploader("موسيقى مجانية (اختياري):", type=["mp3", "wav"])
-    youtube_export = st.checkbox("تصدير نسخة يوتيوب (16:9)", value=True)
-    watermark = st.text_input("نص العلامة المائية (اختياري):", value="@SuperAI")
-    color = st.color_picker("اختر لون النص", "#ffffff")
-    text_size = st.slider("حجم النص", 14, 60, 28)
-    text_pos = st.radio("مكان النص", options=["top", "center", "bottom"], index=2)
-    gif_export = st.checkbox("تصدير كـ GIF", value=False)
-    square_export = st.checkbox("تصدير نسخة مربعة للفيديو (انستجرام)", value=False)
-    voice_choice = st.selectbox("اختر صوت التعليق الصوتي:", [v["name"] for v in GTTS_VOICES])
+    logo_file = st.file_uploader("Logo (optional):", type=["png", "jpg", "jpeg"])
+    music_file = st.file_uploader("Background music (optional):", type=["mp3", "wav"])
+    youtube_export = st.checkbox("YouTube export (16:9)", value=True)
+    watermark = st.text_input("Watermark text (optional):", value="@SuperAI")
+    color = st.color_picker("Text color", "#ffffff")
+    text_size = st.slider("Text size", 14, 60, 28)
+    text_pos = st.radio("Text position", options=["top", "center", "bottom"], index=2)
+    gif_export = st.checkbox("Export as GIF", value=False)
+    square_export = st.checkbox("Export square video (Instagram)", value=False)
+    voice_choice = st.selectbox("Voice-over voice:", [v["name"] for v in GTTS_VOICES])
     voice_data = next(v for v in GTTS_VOICES if v["name"] == voice_choice)
-    text_anim_mode = st.radio("طريقة ظهور الكلمات:", ["كلمة كلمة", "كل ثلاث كلمات"], index=0)
-    text_anim_mode_val = "word" if text_anim_mode == "كلمة كلمة" else "group"
-    text_anim_group_size = 1 if text_anim_mode == "كلمة كلمة" else 3
-    text_anim_lang = st.selectbox("لغة النص المتحرك:", ["ar", "en", "fr", "es", "de"], index=0)
+    text_anim_mode_val = "sentence"
+    text_anim_group_size = 1
+    text_anim_lang = voice_data["lang"]
 
-    # متغيرات لحفظ السكربت والوسائط في الجلسة
     if "editable_script" not in st.session_state:
         st.session_state["editable_script"] = ""
     if "media_list" not in st.session_state:
         st.session_state["media_list"] = []
-    if "last_sentences" not in st.session_state:
-        st.session_state["last_sentences"] = []
-    if "last_script_mode" not in st.session_state:
-        st.session_state["last_script_mode"] = ""
     if "last_num_media" not in st.session_state:
         st.session_state["last_num_media"] = 0
 
-    if st.button("ابدأ الإبداع!"):
-        progress_bar = st.progress(0, text="جاري بدء العملية ...")
-        completed = 0
-
-        if script_mode == "أكتب السكربت بنفسي" and not script_text.strip():
-            st.error("يرجى كتابة نص السكربت بالكامل.")
-        elif script_mode != "أكتب السكربت بنفسي" and not topic.strip():
-            st.error("يرجى كتابة موضوع الفيديو.")
+    if st.button("Generate!"):
+        progress_bar = st.progress(0, text="Starting ...")
+        if script_mode == "Write script manually" and not script_text.strip():
+            st.error("Please enter the script text.")
+        elif script_mode != "Write script manually" and not topic.strip():
+            st.error("Please enter a topic.")
         elif not COHERE_API_KEY:
-            st.error("مفتاح Cohere API غير موجود. يرجى إضافته في الأعلى.")
+            st.error("Cohere API key not found!")
         else:
-            with st.spinner("جاري الإبداع ..."):
-                progress_bar.progress(5, text="جاري توليد السكربت ...")
+            with st.spinner("Generating ..."):
+                progress_bar.progress(5, text="Generating script ...")
                 media_list = []
-
-                if script_mode == "إنشاء السكربت بناءً على الوسائط (Cohere)":
+                if script_mode == "Script from media (Cohere)":
                     all_media = []
                     n_each = max(1, num_media // (2 * len(sources_selected)))
                     for src in sources_selected:
@@ -453,7 +438,7 @@ else:
                             j += 1
                     media_list = media_list[:num_media]
                     if not media_list:
-                        st.error("لم يتم العثور على وسائط كافية (صور/فيديو). جرب تقليل العدد أو فعّل مصادر أكثر.")
+                        st.error("Not enough media found. Try reducing the number or enabling more sources.")
                         st.stop()
                     for i, (media_type, url, desc) in enumerate(media_list):
                         if media_type == "image":
@@ -461,70 +446,67 @@ else:
                         elif media_type == "video":
                             st.video(url, format="video/mp4", start_time=0)
                     script_text_out = generate_script_from_media_cohere(
-                        media_list, topic, lang=lang_option, max_tokens=cohere_tokens, temperature=cohere_temp
+                        media_list, topic, lang="en", max_tokens=cohere_tokens, temperature=cohere_temp
                     )
                     final_text = script_text_out.strip()
-                elif script_mode == "إنشاء السكربت تلقائيًا (Cohere)":
-                    cohere_prompt = f"""اكتب نصًا وثائقيًا متسلسلًا ومترابطًا عن "{topic}" مكوّن من {num_media} جمل، بحيث تكمّل كل جملة ما قبلها، وكأن المشاهد يتابع قصة أو شرح متدرج."""
+                elif script_mode == "AI-generated script (Cohere)":
+                    cohere_prompt = f"""Write a smooth, well-connected, short documentary script about "{topic}" in {num_media} sentences. Each sentence continues the previous, as if the viewer is following a story."""
                     script_text_out = generate_script_with_cohere(cohere_prompt, max_tokens=cohere_tokens, temperature=cohere_temp)
                     final_text = script_text_out.strip()
-                    # media_list سيُبنى لاحقاً بعد التعديل
                 else:
                     final_text = script_text.strip()
-                    # media_list سيُبنى لاحقاً بعد التعديل
-
                 st.session_state["editable_script"] = final_text
                 st.session_state["media_list"] = media_list
-                st.session_state["last_sentences"] = filter_script_sentences(final_text, num_media)
-                st.session_state["last_script_mode"] = script_mode
                 st.session_state["last_num_media"] = num_media
 
-    # عرض السكربت القابل للتعديل
     if st.session_state.get("editable_script", ""):
-        st.markdown("### ✏️ يمكنك تعديل السكربت ثم الضغط على زر بناء الفيديو:")
-        script_edit = st.text_area("السكربت (يمكنك التعديل عليه قبل إنتاج الفيديو):",
+        st.markdown("### ✏️ Edit the script, then click Build Video:")
+        script_edit = st.text_area("Script (edit before building video):",
                                    value=st.session_state["editable_script"], height=250, key="script_editbox")
-        if st.button("بناء الفيديو/إعادة البناء بعد التعديل"):
-            # بناء الفيديو بناءً على النص المعدل
+        if st.button("Build video / Rebuild after edit"):
+            temp_files = []
             sentences = filter_script_sentences(script_edit, st.session_state["last_num_media"])
-            st.session_state["editable_script"] = script_edit  # احفظ آخر نسخة
             logo_path = None
             if logo_file:
-                logo_path = os.path.join(save_dir, "logo.png")
-                image = Image.open(logo_file)
-                image.save(logo_path)
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_logo:
+                    image = Image.open(logo_file)
+                    image.save(tmp_logo.name)
+                    logo_path = tmp_logo.name
+                    temp_files.append(logo_path)
             music_path = None
             if music_file:
-                music_path = os.path.join(save_dir, "music.mp3")
-                music_file.seek(0)
-                with open(music_path, "wb") as f:
-                    f.write(music_file.read())
+                with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_music:
+                    music_file.seek(0)
+                    tmp_music.write(music_file.read())
+                    music_path = tmp_music.name
+                    temp_files.append(music_path)
             montage = []
             not_found_report = []
             media_list = st.session_state["media_list"]
-            script_mode = st.session_state["last_script_mode"]
-            if script_mode == "إنشاء السكربت بناءً على الوسائط (Cohere)":
+            script_mode = script_mode if script_mode != "" else "AI-generated script (Cohere)"
+            if script_mode == "Script from media (Cohere)":
                 pair_count = min(len(sentences), len(media_list))
                 for idx in range(pair_count):
                     sent = sentences[idx]
                     media_type, media_url, media_desc = media_list[idx]
                     if media_type == "image":
-                        img_path = os.path.join(save_dir, f"img_{idx}.jpg")
-                        try:
-                            img_data = requests.get(media_url, timeout=10).content
-                            with open(img_path, "wb") as f:
-                                f.write(img_data)
-                            media_url_local = img_path
-                        except Exception as e:
-                            not_found_report.append(f"فشل تحميل الصورة: {media_url}")
-                            continue
+                        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_img:
+                            try:
+                                img_data = requests.get(media_url, timeout=10).content
+                                tmp_img.write(img_data)
+                                media_url_local = tmp_img.name
+                                temp_files.append(media_url_local)
+                            except Exception as e:
+                                not_found_report.append(f"Failed to download image: {media_url}")
+                                continue
                     else:
                         media_url_local = media_url
-                    mp3_path = os.path.join(save_dir, f"audio_{idx}.mp3")
-                    safe_tts_save(sent, mp3_path, voice_data["lang"], voice_data["tld"])
+                    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_mp3:
+                        safe_tts_save(sent, tmp_mp3.name, voice_data["lang"], voice_data["tld"])
+                        mp3_path = tmp_mp3.name
+                        temp_files.append(mp3_path)
                     montage.append((media_type, media_url_local, mp3_path, sent))
             else:
-                # توليد تلقائي للصور حسب كل جملة
                 for idx in range(min(len(sentences), st.session_state["last_num_media"])):
                     sent = sentences[idx]
                     found = False
@@ -556,35 +538,42 @@ else:
                                 found = True
                                 break
                     if found and media_type == "image":
-                        img_path = os.path.join(save_dir, f"img_{idx}.jpg")
-                        try:
-                            img_data = requests.get(media_url, timeout=10).content
-                            with open(img_path, "wb") as f:
-                                f.write(img_data)
-                            media_url = img_path
-                        except Exception as e:
-                            not_found_report.append(f"فشل تحميل الصورة: {media_url}")
-                            continue
-                    mp3_path = os.path.join(save_dir, f"audio_{idx}.mp3")
-                    safe_tts_save(sent, mp3_path, voice_data["lang"], voice_data["tld"])
+                        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_img:
+                            try:
+                                img_data = requests.get(media_url, timeout=10).content
+                                tmp_img.write(img_data)
+                                media_url = tmp_img.name
+                                temp_files.append(media_url)
+                            except Exception as e:
+                                not_found_report.append(f"Failed to download image: {media_url}")
+                                continue
+                    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_mp3:
+                        safe_tts_save(sent, tmp_mp3.name, voice_data["lang"], voice_data["tld"])
+                        mp3_path = tmp_mp3.name
+                        temp_files.append(mp3_path)
                     montage.append((media_type, media_url, mp3_path, sent))
             if not montage:
-                st.error("لم يتم إنشاء أي مشهد صالح للفيديو.")
+                st.error("No valid scenes for the video.")
                 st.stop()
 
-            out_video_path = os.path.join(save_dir, "documentary_video.mp4")
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_video:
+                out_video_path = tmp_video.name
             final_video, video_duration_sec = assemble_video(
                 montage, out_path=out_video_path, color=color, text_size=text_size, text_pos=text_pos,
                 logo_path=logo_path, music_path=music_path, watermark_text=watermark,
                 gif_export=gif_export, square_export=square_export, youtube_export=youtube_export,
                 text_anim_mode=text_anim_mode_val, text_anim_group_size=text_anim_group_size, text_anim_lang=text_anim_lang
             )
-            st.success("تم الإنشاء! شاهد نتيجتك 👇")
+            st.success("Done! See your result 👇")
             st.video(final_video)
-            st.info(f"مدة الفيديو النهائي: {video_duration_sec/60:.2f} دقيقة ({video_duration_sec:.1f} ثانية)")
+            st.info(f"Video duration: {video_duration_sec/60:.2f} min ({video_duration_sec:.1f} sec)")
             if not_found_report:
-                st.warning("المشاهد التي لم يتم العثور لها على صور أو حدث بها خطأ:")
+                st.warning("Failed to find media for some scenes:")
                 st.markdown("\n".join(not_found_report))
             with open(final_video, "rb") as f:
-                st.download_button(label="تحميل الفيديو", data=f, file_name="documentary_video.mp4",
-                                   mime="video/mp4")
+                st.download_button(label="Download Video", data=f, file_name="documentary_video.mp4", mime="video/mp4")
+            for f in temp_files:
+                try:
+                    os.remove(f)
+                except Exception:
+                    pass
