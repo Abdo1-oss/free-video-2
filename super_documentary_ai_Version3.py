@@ -357,12 +357,12 @@ else:
     st.markdown("**Enter your topic, choose number of scenes, select media sources, and let AI create a documentary video!**")
     topic = st.text_input("Video topic (e.g., Smart Cars)")
     st.session_state["topic"] = topic
-    num_media = st.slider("Number of scenes:", min_value=2, max_value=30, value=5)
+    num_media = st.slider("Number of scenes:", min_value=2, max_value=300, value=5)
     script_mode = st.radio(
         "Script source:",
         ["AI-generated script (Cohere)", "Script from media (Cohere)", "Write script manually"], index=0)
     script_text = ""
-    cohere_tokens = st.slider("Approximate script length (tokens):", 100, 4000, 1000, step=50)
+    cohere_tokens = st.slider("Approximate script length (tokens):", 100, 10000, 1000, step=50)
     cohere_temp = st.slider("Creativity:", 0.1, 1.0, 0.4, step=0.05)
     if script_mode == "Write script manually":
         script_text = st.text_area("Write your documentary script here:", height=300)
