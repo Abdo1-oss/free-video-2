@@ -18,10 +18,10 @@ try:
 except LookupError:
     nltk.download('punkt')
 
-PEXELS_API_KEY = st.secrets.get("PEXELS_API_KEY", "")
-UNSPLASH_ACCESS_KEY = st.secrets.get("UNSPLASH_ACCESS_KEY", "")
-PIXABAY_API_KEY = st.secrets.get("PIXABAY_API_KEY", "")
-COHERE_API_KEY = st.secrets.get("COHERE_API_KEY", "")
+PEXELS_API_KEY = "pLcIoo3oNdhqna28AfdaBYhkE3SFps9oRGuOsxY3JTe92GcVDZpwZE9i"
+UNSPLASH_ACCESS_KEY = "SDK5avSHNm9lcNhhLhT_SzUdzd98hYX0BVjswi3ZHzU"
+PIXABAY_API_KEY = "50380897-76243eaec536038f687ff8e15"
+COHERE_API_KEY = "K1GW0y2wWiwW7xlK7db7zZnqX7sxfRVGiWopVfCD"
 
 GTTS_VOICES = [
     {"name": "English (US) - Female", "lang": "en", "tld": "com"},
