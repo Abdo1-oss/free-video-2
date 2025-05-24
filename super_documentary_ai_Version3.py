@@ -13,10 +13,10 @@ import re
 import random
 import wave
 import struct
-import psutil  # لمراقبة الذاكرة
+import psutil  # Memory monitoring
 
 try:
-    nltk.data.find('tokenizers/punkt')
+    nltk.data.find('tokenizers.punkt')
 except LookupError:
     nltk.download('punkt')
 
@@ -43,7 +43,8 @@ def safe_download_and_convert_image(media_url, temp_files):
     try:
         response = requests.get(media_url, timeout=10)
         img_data = response.content
-        if len(img_data) < 1048576:
+        # Accept images >= 80KB (to allow more images, but still avoid corrupt/small ones)
+        if len(img_data) < 80_000:
             print(f"Image too small in bytes: {media_url} ({len(img_data)} bytes)")
             return None
         img_bytes = io.BytesIO(img_data)
@@ -271,7 +272,7 @@ def assemble_video(
     temp_files = []
     print_memory_usage("Start assemble_video")
     for idx, (media_type, media_url, audio_path, sent) in enumerate(montage):
-        print(f"Start processing scene {idx+1}/{len(montage)} type={media_type}")
+        print(f"Scene {idx+1}: media_type={media_type}, media_url={media_url}")
         print_memory_usage(f"scene_{idx+1}_start")
         try:
             duration = get_audio_duration(audio_path)
@@ -303,9 +304,9 @@ def assemble_video(
                     )
                     clips.append(anim_txt)
                 except Exception as e:
-                    print(f"Video error: {e}, fallback to image")
-                    media_type = "image"
-            if media_type == "image":
+                    print(f"Video error: {e}, skipping video scene.")
+                    continue   # لا تحاول معالجته كصورة
+            elif media_type == "image":
                 print(f"Processing image: {media_url}")
                 img_path = media_url
                 if isinstance(img_path, str) and img_path.startswith("http"):
@@ -314,7 +315,12 @@ def assemble_video(
                         print(f"Skipping image (bad, too small, or too small in bytes): {media_url}")
                         continue
                 try:
-                    img_clip = ImageClip(img_path)
+                    # معالجة مشكلة ANTIALIAS لـ Pillow >=10
+                    if hasattr(Image, 'Resampling'):
+                        pil = Image.open(img_path).resize((1280, 720), Image.Resampling.LANCZOS)
+                        img_clip = ImageClip(np.array(pil))
+                    else:
+                        img_clip = ImageClip(img_path)
                     img_clip = resize_and_letterbox(img_clip, target_w=1280, target_h=720)
                 except Exception as e:
                     print(f"ImageClip error: {e}")
@@ -396,7 +402,7 @@ def assemble_video(
     print_memory_usage("End assemble_video")
     return out_path, final_audio.duration
 
-# ================== Streamlit App UI ==================
+# ==== Streamlit App UI ====
 st.set_page_config(page_title="AI Documentary Generator", layout="wide")
 st.title("🎬 AI Documentary Generator (Images, Video, Voice-over)")
 
@@ -412,7 +418,7 @@ else:
     st.markdown("**Enter your topic, choose number of scenes, select media sources, and let AI create a documentary video!**")
     topic = st.text_input("Video topic (e.g., Smart Cars)")
     st.session_state["topic"] = topic
-    num_media = st.slider("Number of scenes:", min_value=2, max_value=300, value=5)
+    num_media = st.slider("Number of scenes:", min_value=2, max_value=30, value=5)
     script_mode = st.radio(
         "Script source:",
         ["AI-generated script (Cohere)", "Script from media (Cohere)", "Write script manually"], index=0)
