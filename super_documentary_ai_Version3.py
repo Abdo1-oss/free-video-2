@@ -6,6 +6,7 @@ import json
 import numpy as np
 from moviepy.editor import concatenate_videoclips, ImageClip, CompositeVideoClip, AudioFileClip, TextClip, concatenate_audioclips, VideoFileClip
 from PIL import Image
+import io
 from gtts import gTTS
 import nltk
 import re
@@ -30,6 +31,21 @@ GTTS_VOICES = [
     {"name": "Spanish (Spain) - Female", "lang": "es", "tld": "es"},
     {"name": "German (Germany) - Female", "lang": "de", "tld": "de"},
 ]
+
+def safe_download_and_convert_image(media_url, temp_files):
+    try:
+        img_data = requests.get(media_url, timeout=10).content
+        img_bytes = io.BytesIO(img_data)
+        with Image.open(img_bytes) as pil_img:
+            pil_img = pil_img.convert("RGB")
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_img:
+                pil_img.save(tmp_img.name)
+                img_path = tmp_img.name
+                temp_files.append(img_path)
+        return img_path
+    except Exception as e:
+        print(f"Failed to process image: {media_url}, error: {e}")
+        return None
 
 def search_pexels_photos_with_desc(query, per_page=1):
     if not PEXELS_API_KEY: return []
@@ -237,6 +253,7 @@ def assemble_video(
 ):
     clips = []
     audio_clips = []
+    temp_files = []
     for media_type, media_url, audio_path, sent in montage:
         duration = get_audio_duration(audio_path)
         audio_clip = AudioFileClip(audio_path)
@@ -271,11 +288,9 @@ def assemble_video(
         if media_type == "image":
             img_path = media_url
             if isinstance(img_path, str) and img_path.startswith("http"):
-                tmp_img = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
-                img_data = requests.get(img_path, timeout=10).content
-                tmp_img.write(img_data)
-                tmp_img.close()
-                img_path = tmp_img.name
+                img_path = safe_download_and_convert_image(img_path, temp_files)
+                if img_path is None:
+                    continue  # تخطى الصورة التالفة
             img_clip = ImageClip(img_path)
             img_clip = resize_and_letterbox(img_clip, target_w=1280, target_h=720)
             img_clip = img_clip.set_duration(duration)
@@ -340,8 +355,14 @@ def assemble_video(
     for a in audio_clips:
         a.close()
     final_clip.close()
+    for f in temp_files:
+        try:
+            os.remove(f)
+        except Exception:
+            pass
     return out_path, final_audio.duration
 
+# ===== Streamlit App UI =====
 st.set_page_config(page_title="AI Documentary Generator", layout="wide")
 st.title("🎬 AI Documentary Generator (Images, Video, Voice-over)")
 
@@ -357,12 +378,12 @@ else:
     st.markdown("**Enter your topic, choose number of scenes, select media sources, and let AI create a documentary video!**")
     topic = st.text_input("Video topic (e.g., Smart Cars)")
     st.session_state["topic"] = topic
-    num_media = st.slider("Number of scenes:", min_value=2, max_value=300, value=5)
+    num_media = st.slider("Number of scenes:", min_value=2, max_value=30, value=5)
     script_mode = st.radio(
         "Script source:",
         ["AI-generated script (Cohere)", "Script from media (Cohere)", "Write script manually"], index=0)
     script_text = ""
-    cohere_tokens = st.slider("Approximate script length (tokens):", 100, 10000, 1000, step=50)
+    cohere_tokens = st.slider("Approximate script length (tokens):", 100, 4000, 1000, step=50)
     cohere_temp = st.slider("Creativity:", 0.1, 1.0, 0.4, step=0.05)
     if script_mode == "Write script manually":
         script_text = st.text_area("Write your documentary script here:", height=300)
@@ -490,15 +511,11 @@ else:
                     sent = sentences[idx]
                     media_type, media_url, media_desc = media_list[idx]
                     if media_type == "image":
-                        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_img:
-                            try:
-                                img_data = requests.get(media_url, timeout=10).content
-                                tmp_img.write(img_data)
-                                media_url_local = tmp_img.name
-                                temp_files.append(media_url_local)
-                            except Exception as e:
-                                not_found_report.append(f"Failed to download image: {media_url}")
-                                continue
+                        img_path = safe_download_and_convert_image(media_url, temp_files)
+                        if img_path is None:
+                            not_found_report.append(f"Failed to download image: {media_url}")
+                            continue
+                        media_url_local = img_path
                     else:
                         media_url_local = media_url
                     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_mp3:
@@ -538,15 +555,11 @@ else:
                                 found = True
                                 break
                     if found and media_type == "image":
-                        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_img:
-                            try:
-                                img_data = requests.get(media_url, timeout=10).content
-                                tmp_img.write(img_data)
-                                media_url = tmp_img.name
-                                temp_files.append(media_url)
-                            except Exception as e:
-                                not_found_report.append(f"Failed to download image: {media_url}")
-                                continue
+                        img_path = safe_download_and_convert_image(media_url, temp_files)
+                        if img_path is None:
+                            not_found_report.append(f"Failed to download image: {media_url}")
+                            continue
+                        media_url = img_path
                     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_mp3:
                         safe_tts_save(sent, tmp_mp3.name, voice_data["lang"], voice_data["tld"])
                         mp3_path = tmp_mp3.name
