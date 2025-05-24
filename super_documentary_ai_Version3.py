@@ -13,6 +13,7 @@ import re
 import random
 import wave
 import struct
+import psutil  # لمراقبة الذاكرة
 
 try:
     nltk.data.find('tokenizers/punkt')
@@ -32,11 +33,16 @@ GTTS_VOICES = [
     {"name": "German (Germany) - Female", "lang": "de", "tld": "de"},
 ]
 
+def print_memory_usage(tag=""):
+    mem = psutil.virtual_memory()
+    msg = f"🔋 RAM used {mem.used // (1024*1024)}MB / {mem.total // (1024*1024)}MB  ({mem.percent}%) [{tag}]"
+    print(msg)
+    st.info(msg)
+
 def safe_download_and_convert_image(media_url, temp_files):
     try:
         response = requests.get(media_url, timeout=10)
         img_data = response.content
-        # Reject anything less than 1MB
         if len(img_data) < 1048576:
             print(f"Image too small in bytes: {media_url} ({len(img_data)} bytes)")
             return None
@@ -263,24 +269,59 @@ def assemble_video(
     clips = []
     audio_clips = []
     temp_files = []
-    for media_type, media_url, audio_path, sent in montage:
-        duration = get_audio_duration(audio_path)
-        audio_clip = AudioFileClip(audio_path)
-        audio_clips.append(audio_clip)
-        if media_type == "video":
-            try:
-                clip = VideoFileClip(media_url)
-                if clip.duration > duration:
-                    clip = clip.subclip(0, duration)
-                else:
-                    clip = clip.set_duration(duration)
-                clip = clip.resize(height=720)
-                if clip.w > 1280:
-                    clip = clip.crop(x_center=clip.w/2, width=1280)
-                elif clip.w < 1280:
-                    clip = clip.margin(left=(1280-clip.w)//2, right=(1280-clip.w)//2, color=(0,0,0))
+    print_memory_usage("Start assemble_video")
+    for idx, (media_type, media_url, audio_path, sent) in enumerate(montage):
+        print(f"Start processing scene {idx+1}/{len(montage)} type={media_type}")
+        print_memory_usage(f"scene_{idx+1}_start")
+        try:
+            duration = get_audio_duration(audio_path)
+            audio_clip = AudioFileClip(audio_path)
+            audio_clips.append(audio_clip)
+            if media_type == "video":
+                print(f"Processing video: {media_url}")
+                try:
+                    clip = VideoFileClip(media_url)
+                    if clip.duration > duration:
+                        clip = clip.subclip(0, duration)
+                    else:
+                        clip = clip.set_duration(duration)
+                    clip = clip.resize(height=720)
+                    if clip.w > 1280:
+                        clip = clip.crop(x_center=clip.w/2, width=1280)
+                    elif clip.w < 1280:
+                        clip = clip.margin(left=(1280-clip.w)//2, right=(1280-clip.w)//2, color=(0,0,0))
+                    anim_txt = animated_text_clip(
+                        clip.set_duration(duration),
+                        sent,
+                        duration,
+                        lang=text_anim_lang,
+                        mode=text_anim_mode,
+                        group_size=text_anim_group_size,
+                        font_size=text_size,
+                        color=color,
+                        text_pos=text_pos
+                    )
+                    clips.append(anim_txt)
+                except Exception as e:
+                    print(f"Video error: {e}, fallback to image")
+                    media_type = "image"
+            if media_type == "image":
+                print(f"Processing image: {media_url}")
+                img_path = media_url
+                if isinstance(img_path, str) and img_path.startswith("http"):
+                    img_path = safe_download_and_convert_image(img_path, temp_files)
+                    if img_path is None:
+                        print(f"Skipping image (bad, too small, or too small in bytes): {media_url}")
+                        continue
+                try:
+                    img_clip = ImageClip(img_path)
+                    img_clip = resize_and_letterbox(img_clip, target_w=1280, target_h=720)
+                except Exception as e:
+                    print(f"ImageClip error: {e}")
+                    continue
+                img_clip = img_clip.set_duration(duration)
                 anim_txt = animated_text_clip(
-                    clip.set_duration(duration),
+                    img_clip,
                     sent,
                     duration,
                     lang=text_anim_lang,
@@ -291,34 +332,14 @@ def assemble_video(
                     text_pos=text_pos
                 )
                 clips.append(anim_txt)
-            except Exception as e:
-                print(f"Video error: {e}, fallback to image")
-                media_type = "image"
-        if media_type == "image":
-            img_path = media_url
-            if isinstance(img_path, str) and img_path.startswith("http"):
-                img_path = safe_download_and_convert_image(img_path, temp_files)
-                if img_path is None:
-                    print(f"Skipping image (bad, too small, or too small in bytes): {media_url}")
-                    continue
-            img_clip = ImageClip(img_path)
-            img_clip = resize_and_letterbox(img_clip, target_w=1280, target_h=720)
-            img_clip = img_clip.set_duration(duration)
-            anim_txt = animated_text_clip(
-                img_clip,
-                sent,
-                duration,
-                lang=text_anim_lang,
-                mode=text_anim_mode,
-                group_size=text_anim_group_size,
-                font_size=text_size,
-                color=color,
-                text_pos=text_pos
-            )
-            clips.append(anim_txt)
+            print(f"Scene {idx+1} processed successfully.")
+            print_memory_usage(f"scene_{idx+1}_end")
+        except Exception as e:
+            print(f"Error in scene {idx+1}: {e}")
     if not clips or not audio_clips:
         st.error("Could not build the final video.")
         return None, None
+    print_memory_usage("Before audio/video concat")
     final_audio = concatenate_audioclips(audio_clips)
     final_clip = concatenate_videoclips(clips, method="compose")
     final_clip = final_clip.set_audio(final_audio)
@@ -358,8 +379,10 @@ def assemble_video(
             final_clip = CompositeVideoClip([final_clip, txt_clip])
         except Exception as e:
             print(f"Watermark error: {e}")
+    print_memory_usage("Before write_videofile")
     final_clip = final_clip.fadein(1).fadeout(1)
     final_clip.write_videofile(out_path, codec="libx264", audio_codec="aac", preset="ultrafast", threads=4, fps=15)
+    print_memory_usage("After write_videofile")
     for c in clips:
         c.close()
     for a in audio_clips:
@@ -370,9 +393,10 @@ def assemble_video(
             os.remove(f)
         except Exception:
             pass
+    print_memory_usage("End assemble_video")
     return out_path, final_audio.duration
 
-# ===== Streamlit App UI =====
+# ================== Streamlit App UI ==================
 st.set_page_config(page_title="AI Documentary Generator", layout="wide")
 st.title("🎬 AI Documentary Generator (Images, Video, Voice-over)")
 
