@@ -38,6 +38,11 @@ def safe_download_and_convert_image(media_url, temp_files):
         img_bytes = io.BytesIO(img_data)
         with Image.open(img_bytes) as pil_img:
             pil_img = pil_img.convert("RGB")
+            width, height = pil_img.size
+            # تجاهل الصور الصغيرة جدًا أو الفارغة أو غير المنطقية
+            if width < 50 or height < 50:
+                print(f"Image too small: {media_url} ({width}x{height})")
+                return None
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_img:
                 pil_img.save(tmp_img.name)
                 img_path = tmp_img.name
@@ -290,7 +295,8 @@ def assemble_video(
             if isinstance(img_path, str) and img_path.startswith("http"):
                 img_path = safe_download_and_convert_image(img_path, temp_files)
                 if img_path is None:
-                    continue  # تخطى الصورة التالفة
+                    print(f"Skipping image (bad or too small): {media_url}")
+                    continue
             img_clip = ImageClip(img_path)
             img_clip = resize_and_letterbox(img_clip, target_w=1280, target_h=720)
             img_clip = img_clip.set_duration(duration)
