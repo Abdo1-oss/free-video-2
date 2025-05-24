@@ -11,3 +11,5 @@ ffmpeg-python
 imageio
 imageio-ffmpeg
 nltk
+numpy
+psutil
