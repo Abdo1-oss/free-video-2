@@ -14,6 +14,7 @@ import random
 import wave
 import struct
 import psutil
+
 # زر البدء مجدداً (يظهر دائماً)
 if st.button("ابدأ مجدداً (Start new project)"):
     for key in list(st.session_state.keys()):
