@@ -632,10 +632,7 @@ else:
             )
             st.success("Done! See your result 👇")
             st.video(final_video)
-           File "/mount/src/free-video-2/super_documentary_ai_Version3.py", line 636
-      st.info(f"Video duration: {video_duration_sec/60:.2f} min ({video_duration_sec:.1f} sec)")
-     ^
-IndentationError: expected an indented block after 'if' statement on line 635
+            st.info(f"Video duration: {video_duration_sec/60:.2f} min ({video_duration_sec:.1f} sec)")
             if not_found_report:
                 st.warning("Failed to find media for some scenes:")
                 st.markdown("\n".join(not_found_report))
@@ -646,3 +643,11 @@ IndentationError: expected an indented block after 'if' statement on line 635
                     os.remove(f)
                 except Exception:
                     pass
+
+# ======= اقتراحات مستقبلية =======
+# - عرض الصور للمستخدم قبل البناء النهائي للموافقة/التبديل
+# - إضافة تحريك الصور (Ken Burns Effect)
+# - حفظ تلقائي واستعادة المشاريع
+# - دعم تخصيص وصف Pollinations من المستخدم
+# - دعم مصادر فيديو AI أخرى عند توفر API
+# - إضافة تقارير تلقائية عن جودة الصورة/المشهد
