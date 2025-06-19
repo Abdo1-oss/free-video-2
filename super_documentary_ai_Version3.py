@@ -22,7 +22,7 @@ except LookupError:
 PEXELS_API_KEY = ""           # ضع مفتاحك هنا (اختياري)
 UNSPLASH_ACCESS_KEY = ""      # ضع مفتاحك هنا (اختياري)
 PIXABAY_API_KEY = ""          # ضع مفتاحك هنا (اختياري)
-COHERE_API_KEY = "YOUR_COHERE_API_KEY_HERE"  # ضع مفتاح Cohere هنا
+COHERE_API_KEY = "K1GW0y2wWiwW7xlK7db7zZnqX7sxfRVGiWopVfCD"  # ضع مفتاح Cohere هنا
 
 GTTS_VOICES = [
     {"name": "English (US) - Female", "lang": "en", "tld": "com"},
