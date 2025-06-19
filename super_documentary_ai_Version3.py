@@ -632,7 +632,11 @@ else:
             )
             st.success("Done! See your result 👇")
             st.video(final_video)
-            st.info(f"Video duration: {video_duration_sec/60:.2f} min ({video_duration_sec:.1f} sec)")
+            if video_duration_sec is not None:
+    st.info(f"Video duration: {video_duration_sec/60:.2f} min ({video_duration_sec:.1f} sec)")
+else:
+    st.warning("⚠️ تعذر حساب مدة الفيديو.")
+
            # Else other media
 elif all_media and len(all_media) > 0:
     media_type, media_url, desc = all_media[0]
