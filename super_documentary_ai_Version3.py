@@ -18,7 +18,6 @@ import psutil
 if st.button("ابدأ مجدداً (Start new project)"):
     for key in list(st.session_state.keys()):
         del st.session_state[key]
-    st.experimental_rerun()
     
 try:
     nltk.data.find('tokenizers.punkt')
