@@ -633,6 +633,13 @@ else:
             st.success("Done! See your result 👇")
             st.video(final_video)
             st.info(f"Video duration: {video_duration_sec/60:.2f} min ({video_duration_sec:.1f} sec)")
+           # Else other media
+elif all_media and len(all_media) > 0:
+    media_type, media_url, desc = all_media[0]
+    found = True
+else:
+    print("⚠️ لم يتم العثور على وسائط مناسبة في all_media.")
+
             if not_found_report:
                 st.warning("Failed to find media for some scenes:")
                 st.markdown("\n".join(not_found_report))
