@@ -13,4 +13,3 @@ imageio-ffmpeg
 nltk
 numpy
 psutil
-experimental_rerun
