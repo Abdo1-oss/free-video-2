@@ -24,7 +24,7 @@ except LookupError:
 PEXELS_API_KEY = ""  # Optional
 UNSPLASH_ACCESS_KEY = ""  # Optional
 PIXABAY_API_KEY = ""  # Optional
-COHERE_API_KEY = "YOUR_COHERE_API_KEY_HERE"  # <-- ضع مفتاح Cohere الخاص بك هنا
+COHERE_API_KEY = "K1GW0y2wWiwW7xlK7db7zZnqX7sxfRVGiWopVfCD" 
 
 GTTS_VOICES = [
     {"name": "English (US) - Female", "lang": "en", "tld": "com"},
@@ -34,33 +34,24 @@ GTTS_VOICES = [
     {"name": "German (Germany) - Female", "lang": "de", "tld": "de"},
 ]
 
-def print_memory_usage(tag=""):
-    mem = psutil.virtual_memory()
-    msg = f"🔋 RAM used {mem.used // (1024*1024)}MB / {mem.total // (1024*1024)}MB  ({mem.percent}%) [{tag}]"
-    print(msg)
-    st.info(msg)
-
 def safe_download_and_convert_image(media_url, temp_files):
     try:
         response = requests.get(media_url, timeout=10)
         img_data = response.content
         if len(img_data) < 80_000:
-            print(f"Image too small in bytes: {media_url} ({len(img_data)} bytes)")
             return None
         img_bytes = io.BytesIO(img_data)
         with Image.open(img_bytes) as pil_img:
             pil_img = pil_img.convert("RGB")
             width, height = pil_img.size
             if width < 50 or height < 50:
-                print(f"Image too small in dimensions: {media_url} ({width}x{height})")
                 return None
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_img:
                 pil_img.save(tmp_img.name)
                 img_path = tmp_img.name
                 temp_files.append(img_path)
         return img_path
-    except Exception as e:
-        print(f"Failed to process image: {media_url}, error: {e}")
+    except Exception:
         return None
 
 def search_pexels_photos_with_desc(query, per_page=1):
@@ -70,8 +61,7 @@ def search_pexels_photos_with_desc(query, per_page=1):
     try:
         data = requests.get(url, headers=headers, timeout=10).json()
         return [("image", photo["src"]["large"], photo.get("alt") or query) for photo in data.get("photos", [])]
-    except Exception as e:
-        print(f"Pexels photos error: {e}")
+    except Exception:
         return []
 
 def search_pexels_videos_with_desc(query, per_page=1):
@@ -85,8 +75,7 @@ def search_pexels_videos_with_desc(query, per_page=1):
             if v.get("video_files"):
                 result.append(("video", v["video_files"][0]["link"], v.get("url", query)))
         return result
-    except Exception as e:
-        print(f"Pexels videos error: {e}")
+    except Exception:
         return []
 
 def search_unsplash_photos_with_desc(query, per_page=1):
@@ -95,8 +84,7 @@ def search_unsplash_photos_with_desc(query, per_page=1):
     try:
         data = requests.get(url, timeout=10).json()
         return [("image", photo["urls"]["regular"], photo.get("alt_description") or query) for photo in data.get("results", [])]
-    except Exception as e:
-        print(f"Unsplash error: {e}")
+    except Exception:
         return []
 
 def search_pixabay_photos_with_desc(query, per_page=1):
@@ -105,8 +93,7 @@ def search_pixabay_photos_with_desc(query, per_page=1):
     try:
         data = requests.get(url, timeout=10).json()
         return [("image", hit["largeImageURL"], hit.get("tags", query)) for hit in data.get("hits", [])]
-    except Exception as e:
-        print(f"Pixabay error: {e}")
+    except Exception:
         return []
 
 def search_pixabay_videos_with_desc(query, per_page=1):
@@ -115,8 +102,7 @@ def search_pixabay_videos_with_desc(query, per_page=1):
     try:
         data = requests.get(url, timeout=10).json()
         return [("video", v["videos"]["medium"]["url"], v.get("tags", query)) for v in data.get("hits", []) if "videos" in v]
-    except Exception as e:
-        print(f"Pixabay videos error: {e}")
+    except Exception:
         return []
 
 def search_wikimedia_photos_with_desc(query, limit=1):
@@ -131,8 +117,7 @@ def search_wikimedia_photos_with_desc(query, limit=1):
             if img_url:
                 result.append(("image", img_url, desc))
         return result
-    except Exception as e:
-        print(f"Wikimedia error: {e}")
+    except Exception:
         return []
 
 def search_pollinations_photos_with_desc(prompt, per_page=1):
@@ -164,11 +149,37 @@ Prompt:
             text = re.sub(r"^(Prompt:)?\s*", '', text)
             return text
         else:
-            print(f"Cohere Scene Prompt API error: {response.status_code} - {response.text}")
+            # Show error in UI for debugging
+            st.error(f"Cohere error generating scene prompt: {response.status_code} - {response.text}")
             return sentence
     except Exception as e:
-        print(f"Cohere Scene Prompt Exception: {e}")
+        st.error(f"Cohere Scene Prompt Exception: {e}")
         return sentence
+
+def generate_script_via_cohere(topic, num_media, cohere_temp=0.4):
+    api_url = "https://api.cohere.ai/v1/generate"
+    headers = {
+        "Authorization": f"Bearer {COHERE_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    cohere_prompt = f"""Write a smooth, well-connected, short documentary script about "{topic}" in {num_media} sentences. Each sentence continues the previous, as if the viewer is following a story."""
+    data = {
+        "model": "command",
+        "prompt": cohere_prompt,
+        "max_tokens": 300,
+        "temperature": cohere_temp
+    }
+    try:
+        response = requests.post(api_url, headers=headers, json=data, timeout=25)
+        if response.status_code == 200:
+            text = response.json()["generations"][0]["text"].strip()
+            return text
+        else:
+            st.error(f"Cohere error generating script: {response.status_code} - {response.text}")
+            return ""
+    except Exception as e:
+        st.error(f"Cohere Script Exception: {e}")
+        return ""
 
 def filter_script_sentences(raw_text, num_media):
     try:
@@ -192,8 +203,7 @@ def get_audio_duration(audio_path):
         duration = ac.duration
         ac.close()
         return duration
-    except Exception as e:
-        print(f"Audio duration error: {e}")
+    except Exception:
         return 2
 
 def animated_text_clip(img_clip, text, duration, lang="en", mode="sentence", group_size=1, font_size=40, color="white", text_pos="bottom"):
@@ -326,8 +336,7 @@ def assemble_video(
                         text_pos=text_pos
                     )
                     clips.append(anim_txt)
-                except Exception as e:
-                    print(f"Video error: {e}, skipping video scene.")
+                except Exception:
                     continue
             elif media_type == "image":
                 img_path = media_url
@@ -342,8 +351,7 @@ def assemble_video(
                     else:
                         img_clip = ImageClip(img_path)
                     img_clip = resize_and_letterbox(img_clip, target_w=1280, target_h=720)
-                except Exception as e:
-                    print(f"ImageClip error: {e}")
+                except Exception:
                     continue
                 img_clip = img_clip.set_duration(duration)
                 if ken_burns_params is not None:
@@ -361,8 +369,8 @@ def assemble_video(
                     text_pos=text_pos
                 )
                 clips.append(anim_txt)
-        except Exception as e:
-            print(f"Error in scene {idx+1}: {e}")
+        except Exception:
+            continue
     if not clips or not audio_clips:
         st.error("Could not build the final video.")
         return None, None
@@ -389,8 +397,8 @@ def assemble_video(
             music_clip = AudioFileClip(music_path).volumex(0.15)
             final_audio = concatenate_audioclips([final_clip.audio, music_clip])
             final_clip = final_clip.set_audio(final_audio)
-        except Exception as e:
-            print(f"Music error: {e}")
+        except Exception:
+            pass
     final_clip = final_clip.fadein(1).fadeout(1)
     final_clip.write_videofile(out_path, codec="libx264", audio_codec="aac", preset="ultrafast", threads=4, fps=15)
     for c in clips:
@@ -413,26 +421,16 @@ def load_project(path="saved_project.json"):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
+# ======== Streamlit App Logic =========
 st.set_page_config(page_title="AI Documentary Generator", layout="wide")
 st.title("🎬 AI Documentary Generator (Images, Video, Voice-over)")
 
-mode = st.radio("Project Type", ["New Project", "Restore Project"])
+if "step" not in st.session_state:
+    st.session_state["step"] = "start"
+
 auto_project_file = "saved_project.json"
 
-if mode == "Restore Project":
-    uploaded_project = st.file_uploader("Upload project file (json):", type="json")
-    if uploaded_project:
-        project_data = json.load(uploaded_project)
-        st.success("Project restored!")
-        st.json(project_data)
-        st.session_state["restored_project"] = project_data
-elif os.path.exists(auto_project_file):
-    if st.button("Restore last project (auto-save)"):
-        project_data = load_project(auto_project_file)
-        st.success("Last auto-saved project loaded.")
-        st.json(project_data)
-        st.session_state["restored_project"] = project_data
-else:
+if st.session_state["step"] == "start":
     st.markdown("**Enter your topic, choose number of scenes, and let AI create a documentary video with AI-generated images and videos!**")
     topic = st.text_input("Video topic (e.g., BMW iX M70)")
     st.session_state["topic"] = topic
@@ -441,17 +439,14 @@ else:
         "Script source:",
         ["AI-generated script (Cohere)", "Write script manually"], index=0)
     script_text = ""
-    cohere_tokens = st.slider("Approximate script length (tokens):", 100, 10000, 1000, step=50)
     cohere_temp = st.slider("Creativity:", 0.1, 1.0, 0.4, step=0.05)
     if script_mode == "Write script manually":
         script_text = st.text_area("Write your documentary script here:", height=300)
-
     sources_selected = st.multiselect(
         "Media sources:",
         options=["Pollinations", "Pexels", "Unsplash", "Pixabay", "Wikimedia"],
         default=["Pollinations", "Pexels", "Unsplash", "Pixabay", "Wikimedia"]
     )
-
     logo_file = st.file_uploader("Logo (optional):", type=["png", "jpg", "jpeg"])
     music_file = st.file_uploader("Background music (optional):", type=["mp3", "wav"])
     youtube_export = st.checkbox("YouTube export (16:9)", value=True)
@@ -459,176 +454,127 @@ else:
     color = st.color_picker("Text color", "#ffffff")
     text_size = st.slider("Text size", 14, 60, 28)
     text_pos = st.radio("Text position", options=["top", "center", "bottom"], index=2)
-    gif_export = st.checkbox("Export as GIF", value=False)
-    square_export = st.checkbox("Export square video (Instagram)", value=False)
     voice_choice = st.selectbox("Voice-over voice:", [v["name"] for v in GTTS_VOICES])
     voice_data = next(v for v in GTTS_VOICES if v["name"] == voice_choice)
-    text_anim_mode_val = "sentence"
-    text_anim_group_size = 1
-    text_anim_lang = voice_data["lang"]
-
     pollinations_n_images = st.slider("Number of Pollinations AI options per scene", 1, 3, 1)
     ken_burns_on = st.checkbox("Apply Ken Burns effect (pan/zoom) for images", value=True)
     if ken_burns_on:
         ken_burns_zoom = st.slider("Ken Burns: Zoom factor", min_value=1.01, max_value=1.2, value=1.08, step=0.01)
         ken_burns_random_pan = st.checkbox("Random pan direction", value=True)
 
-    if "editable_script" not in st.session_state:
-        st.session_state["editable_script"] = ""
-    if "montage_choices" not in st.session_state:
-        st.session_state["montage_choices"] = []
-    if "last_num_media" not in st.session_state:
-        st.session_state["last_num_media"] = 0
-
     if st.button("Generate!"):
-        progress_bar = st.progress(0, text="Starting ...")
         if script_mode == "Write script manually" and not script_text.strip():
             st.error("Please enter the script text.")
         elif script_mode != "Write script manually" and not topic.strip():
             st.error("Please enter a topic.")
-        elif not COHERE_API_KEY:
+        elif not COHERE_API_KEY and script_mode == "AI-generated script (Cohere)":
             st.error("Cohere API key not found!")
         else:
-            with st.spinner("Generating ..."):
-                progress_bar.progress(5, text="Generating script ...")
-                sentences = []
-                if script_mode == "AI-generated script (Cohere)":
-                    api_url = "https://api.cohere.ai/v1/generate"
-                    headers = {
-                        "Authorization": f"Bearer {COHERE_API_KEY}",
-                        "Content-Type": "application/json"
-                    }
-                    cohere_prompt = f"""Write a smooth, well-connected, short documentary script about "{topic}" in {num_media} sentences. Each sentence continues the previous, as if the viewer is following a story."""
-                    data = {
-                        "model": "command",
-                        "prompt": cohere_prompt,
-                        "max_tokens": 300,
-                        "temperature": cohere_temp
-                    }
-                    response = requests.post(api_url, headers=headers, json=data)
-                    script_text_out = ""
-                    if response.status_code == 200:
-                        script_text_out = response.json()["generations"][0]["text"].strip()
-                    else:
-                        st.error("Cohere error generating script")
-                    sentences = filter_script_sentences(script_text_out, num_media)
-                    final_text = "\n".join(sentences)
+            # ====== Script Generation ======
+            if script_mode == "AI-generated script (Cohere)":
+                raw_script = generate_script_via_cohere(topic, num_media, cohere_temp)
+                sentences = filter_script_sentences(raw_script, num_media)
+                final_text = "\n".join(sentences)
+            else:
+                final_text = script_text.strip()
+                sentences = filter_script_sentences(final_text, num_media)
+
+            montage_choices = []
+            for idx, sent in enumerate(sentences):
+                ai_prompt = generate_scene_prompt_via_cohere(sent, topic)
+                pollimgs = []
+                if "Pollinations" in sources_selected:
+                    pollimgs = search_pollinations_photos_with_desc(ai_prompt, per_page=pollinations_n_images)
+                all_media = []
+                if "Pexels" in sources_selected:
+                    all_media += search_pexels_photos_with_desc(sent, per_page=1)
+                    all_media += search_pexels_videos_with_desc(sent, per_page=1)
+                if "Pixabay" in sources_selected:
+                    all_media += search_pixabay_photos_with_desc(sent, per_page=1)
+                    all_media += search_pixabay_videos_with_desc(sent, per_page=1)
+                if "Unsplash" in sources_selected:
+                    all_media += search_unsplash_photos_with_desc(sent, per_page=1)
+                if "Wikimedia" in sources_selected:
+                    all_media += search_wikimedia_photos_with_desc(sent, limit=1)
+                if pollimgs:
+                    media_type, media_url, desc = pollimgs[0]
+                elif all_media:
+                    media_type, media_url, desc = all_media[0]
                 else:
-                    final_text = script_text.strip()
-                    sentences = filter_script_sentences(final_text, num_media)
+                    media_type = "image"
+                    media_url = pollimgs[0][1] if pollimgs else ""
+                    desc = ai_prompt
+                ken_burns_params = (ken_burns_zoom if ken_burns_on else 1.0, "random" if ken_burns_on and ken_burns_random_pan else "left_to_right")
+                montage_choices.append((media_type, media_url, sent, ken_burns_params)
+                )
+            save_project({
+                "topic": topic,
+                "script": final_text,
+                "sentences": sentences,
+                "montage_choices": montage_choices,
+                "settings": {
+                    "color": color, "text_size": text_size, "text_pos": text_pos,
+                    "youtube_export": youtube_export, "watermark": watermark,
+                    "ken_burns_on": ken_burns_on,
+                    "ken_burns_zoom": ken_burns_zoom if ken_burns_on else 1.0,
+                    "ken_burns_random_pan": ken_burns_random_pan if ken_burns_on else False,
+                    "voice_choice": voice_choice,
+                    "pollinations_n_images": pollinations_n_images,
+                    "sources_selected": sources_selected
+                }
+            }, path=auto_project_file)
+            st.session_state["editable_script"] = final_text
+            st.session_state["montage_choices"] = montage_choices
+            st.session_state["last_num_media"] = num_media
+            st.session_state["step"] = "edit_script"
 
-                montage_choices = []
-                for idx, sent in enumerate(sentences):
-                    ai_prompt = generate_scene_prompt_via_cohere(sent, topic)
-                    pollimgs = []
-                    if "Pollinations" in sources_selected:
-                        pollimgs = search_pollinations_photos_with_desc(ai_prompt, per_page=pollinations_n_images)
-                    found = False
-                    all_media = []
-                    if "Pexels" in sources_selected:
-                        all_media += search_pexels_photos_with_desc(sent, per_page=1)
-                        all_media += search_pexels_videos_with_desc(sent, per_page=1)
-                    if "Pixabay" in sources_selected:
-                        all_media += search_pixabay_photos_with_desc(sent, per_page=1)
-                        all_media += search_pixabay_videos_with_desc(sent, per_page=1)
-                    if "Unsplash" in sources_selected:
-                        all_media += search_unsplash_photos_with_desc(sent, per_page=1)
-                    if "Wikimedia" in sources_selected:
-                        all_media += search_wikimedia_photos_with_desc(sent, limit=1)
-                    # Pollinations priority
-                    if pollimgs:
-                        st.write(f"Scene {idx+1}: Choose Pollinations AI image for this scene:")
-                        cols = st.columns(len(pollimgs))
-                        poll_pick = 0
-                        for i, (media_type, media_url, desc) in enumerate(pollimgs):
-                            with cols[i]:
-                                st.image(media_url, caption=f"Option {i+1}: {desc}", width=200)
-                                if st.button(f"Select Option {i+1} for Scene {idx+1}"):
-                                    poll_pick = i
-                        media_type, media_url, desc = pollimgs[poll_pick]
-                        found = True
-                    # Else other media
-                    elif all_media:
-                        media_type, media_url, desc = all_media[0]
-                        found = True
-                    else:
-                        media_type = "image"
-                        media_url = pollimgs[0][1] if pollimgs else ""
-                        desc = ai_prompt
-                    ken_burns_params = (ken_burns_zoom if ken_burns_on else 1.0, "random" if ken_burns_on and ken_burns_random_pan else "left_to_right")
-                    montage_choices.append((media_type, media_url, sent, ken_burns_params))
-                save_project({
-                    "topic": topic,
-                    "script": final_text,
-                    "sentences": sentences,
-                    "montage_choices": montage_choices,
-                    "settings": {
-                        "color": color, "text_size": text_size, "text_pos": text_pos,
-                        "youtube_export": youtube_export, "watermark": watermark,
-                        "ken_burns_on": ken_burns_on,
-                        "ken_burns_zoom": ken_burns_zoom if ken_burns_on else 1.0,
-                        "ken_burns_random_pan": ken_burns_random_pan if ken_burns_on else False,
-                        "voice_choice": voice_choice,
-                        "pollinations_n_images": pollinations_n_images,
-                        "sources_selected": sources_selected
-                    }
-                }, path=auto_project_file)
-                st.success("Media selected. Now you can build your video!")
-                st.session_state["editable_script"] = final_text
-                st.session_state["montage_choices"] = montage_choices
-                st.session_state["last_num_media"] = num_media
-
-    if st.session_state.get("editable_script", "") and st.session_state.get("montage_choices"):
-        st.markdown("### ✏️ Edit the script, then click Build Video:")
-        script_edit = st.text_area("Script (edit before building video):",
-                                   value=st.session_state["editable_script"], height=250, key="script_editbox")
-        if st.button("Build video / Rebuild after edit"):
-            temp_files = []
-            sentences = filter_script_sentences(script_edit, st.session_state["last_num_media"])
-            logo_path = None
-            if logo_file:
-                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_logo:
-                    image = Image.open(logo_file)
-                    image.save(tmp_logo.name)
-                    logo_path = tmp_logo.name
-                    temp_files.append(logo_path)
-            music_path = None
-            if music_file:
-                with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_music:
-                    music_file.seek(0)
-                    tmp_music.write(music_file.read())
-                    music_path = tmp_music.name
-                    temp_files.append(music_path)
-            montage = []
-            not_found_report = []
-            for idx, (media_type, media_url, sent, ken_burns_params) in enumerate(st.session_state["montage_choices"]):
-                scene_sent = sentences[idx] if idx < len(sentences) else sent
-                with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_mp3:
-                    safe_tts_save(scene_sent, tmp_mp3.name, voice_data["lang"], voice_data["tld"])
-                    mp3_path = tmp_mp3.name
-                    temp_files.append(mp3_path)
-                montage.append((media_type, media_url, mp3_path, scene_sent, ken_burns_params))
-            if not montage:
-                st.error("No valid scenes for the video.")
-                st.stop()
-            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_video:
-                out_video_path = tmp_video.name
-            final_video, video_duration_sec = assemble_video(
-                montage, out_path=out_video_path, color=color, text_size=text_size, text_pos=text_pos,
-                logo_path=logo_path, music_path=music_path, watermark_text=watermark,
-                gif_export=gif_export, square_export=square_export, youtube_export=youtube_export,
-                text_anim_mode=text_anim_mode_val, text_anim_group_size=text_anim_group_size, text_anim_lang=text_anim_lang
-            )
-            st.success("Done! See your result 👇")
-            st.video(final_video)
-            st.info(f"Video duration: {video_duration_sec/60:.2f} min ({video_duration_sec:.1f} sec)")
-            if not_found_report:
-                st.warning("Failed to find media for some scenes:")
-                st.markdown("\n".join(not_found_report))
-            with open(final_video, "rb") as f:
-                st.download_button(label="Download Video", data=f, file_name="documentary_video.mp4", mime="video/mp4")
-            for f in temp_files:
-                try:
-                    os.remove(f)
-                except Exception:
-                    pass
+if st.session_state["step"] == "edit_script" and st.session_state.get("editable_script") and st.session_state.get("montage_choices"):
+    st.markdown("### ✏️ Edit the script, then click Build Video:")
+    script_edit = st.text_area("Script (edit before building video):",
+                               value=st.session_state["editable_script"], height=250, key="script_editbox")
+    if st.button("Build video / Rebuild after edit"):
+        temp_files = []
+        sentences = filter_script_sentences(script_edit, st.session_state["last_num_media"])
+        logo_path = None
+        logo_file = None
+        music_path = None
+        music_file = None
+        voice_choice = st.session_state["montage_choices"][0][3] if st.session_state["montage_choices"] else "English (US) - Female"
+        voice_data = next(v for v in GTTS_VOICES if v["name"] == voice_choice)
+        color = "#ffffff"
+        text_size = 28
+        text_pos = "bottom"
+        youtube_export = True
+        watermark = "@SuperAI"
+        montage = []
+        not_found_report = []
+        for idx, (media_type, media_url, sent, ken_burns_params) in enumerate(st.session_state["montage_choices"]):
+            scene_sent = sentences[idx] if idx < len(sentences) else sent
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_mp3:
+                safe_tts_save(scene_sent, tmp_mp3.name, voice_data["lang"], voice_data["tld"])
+                mp3_path = tmp_mp3.name
+                temp_files.append(mp3_path)
+            montage.append((media_type, media_url, mp3_path, scene_sent, ken_burns_params))
+        if not montage:
+            st.error("No valid scenes for the video.")
+            st.stop()
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_video:
+            out_video_path = tmp_video.name
+        final_video, video_duration_sec = assemble_video(
+            montage, out_path=out_video_path, color=color, text_size=text_size, text_pos=text_pos,
+            logo_path=logo_path, music_path=music_path, watermark_text=watermark,
+            youtube_export=youtube_export
+        )
+        st.success("Done! See your result 👇")
+        st.video(final_video)
+        st.info(f"Video duration: {video_duration_sec/60:.2f} min ({video_duration_sec:.1f} sec)")
+        with open(final_video, "rb") as f:
+            st.download_button(label="Download Video", data=f, file_name="documentary_video.mp4", mime="video/mp4")
+        for f in temp_files:
+            try:
+                os.remove(f)
+            except Exception:
+                pass
+        if st.button("Start new project"):
+            st.session_state.clear()
+            st.session_state["step"] = "start"
