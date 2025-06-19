@@ -39,6 +39,85 @@ GTTS_VOICES = [
     {"name": "German (Germany) - Female", "lang": "de", "tld": "de"},
 ]
 
+import streamlit as st
+
+# --------------------
+# أضف هنا جميع الدوال المساعدة ومصادر الصور والفيديو (مثل generate_script_via_cohere, search_pollinations_photos_with_desc, assemble_video, إلخ)
+# --------------------
+
+# إعداد الصفحة
+st.set_page_config(page_title="AI Documentary Generator", layout="wide")
+st.title("🎬 AI Documentary Generator (Images, Video, Voice-over)")
+
+# زر البدء مجددًا (يظهر دائمًا في الأعلى)
+if st.button("ابدأ مجددًا (Start new project)"):
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    st.experimental_rerun()
+
+# إدارة الخطوات
+if "step" not in st.session_state:
+    st.session_state["step"] = "start"
+
+# ============ الخطوة الأولى: إدخال البيانات ============
+if st.session_state["step"] == "start":
+    topic = st.text_input("Video topic (e.g., BMW iX M70)")
+    num_media = st.slider("Number of scenes:", min_value=2, max_value=15, value=5)
+    script_mode = st.radio("Script source:", ["AI-generated script (Cohere)", "Write script manually"], index=0)
+    script_text = ""
+    cohere_temp = st.slider("Creativity:", 0.1, 1.0, 0.4, step=0.05)
+    if script_mode == "Write script manually":
+        script_text = st.text_area("Write your documentary script here:", height=300)
+    sources_selected = st.multiselect(
+        "Media sources:",
+        options=["Pollinations", "Pexels", "Pixabay", "Unsplash", "Wikimedia"],
+        default=["Pollinations", "Pexels", "Pixabay", "Unsplash", "Wikimedia"]
+    )
+    # يمكنك إضافة بقية الخيارات مثل اللوجو والموسيقى...
+    if st.button("Generate!"):
+        # تحقق من المدخلات
+        if script_mode == "Write script manually" and not script_text.strip():
+            st.error("Please enter the script text.")
+        elif script_mode != "Write script manually" and not topic.strip():
+            st.error("Please enter a topic.")
+        else:
+            # توليد السكريبت
+            if script_mode == "AI-generated script (Cohere)":
+                raw_script = generate_script_via_cohere(topic, num_media, cohere_temp)
+                if not raw_script.strip():
+                    st.warning("لم يتم توليد السكريبت! قد يكون هناك خطأ في Cohere أو تجاوزت الحد، انتظر دقيقة أو استخدم مفتاح Production.")
+                    st.stop()
+                sentences = filter_script_sentences(raw_script, num_media)
+                final_text = "\n".join(sentences)
+            else:
+                final_text = script_text.strip()
+                sentences = filter_script_sentences(final_text, num_media)
+
+            st.session_state["editable_script"] = final_text
+            st.session_state["montage_choices"] = []  # ستملأ لاحقًا عند اختيار الصور/الميديا
+            st.session_state["last_num_media"] = num_media
+            st.session_state["topic"] = topic
+            st.session_state["sources_selected"] = sources_selected
+            st.session_state["step"] = "edit_script"
+
+# ============ الخطوة الثانية: التعديل وبناء الفيديو ============
+if st.session_state["step"] == "edit_script" and st.session_state.get("editable_script"):
+    st.markdown("### ✏️ Edit the script, then click Build Video:")
+    script_edit = st.text_area("Script (edit before building video):",
+                               value=st.session_state["editable_script"], height=250, key="script_editbox")
+    if st.button("Build video / Rebuild after edit"):
+        # بناء الفيديو (استدع الدوال المطلوبة مثل assemble_video وغيره)
+        # إذا تم بنجاح:
+        st.session_state["step"] = "video_ready"
+
+# ============ الخطوة الأخيرة: عرض الفيديو ============
+if st.session_state["step"] == "video_ready":
+    st.success("Done! See your result 👇")
+    # اعرض الفيديو هنا
+    # st.video(...)
+    # زر التنزيل إذا أردت
+    # st.download_button(...)
+
 def print_memory_usage(tag=""):
     mem = psutil.virtual_memory()
     msg = f"🔋 RAM used {mem.used // (1024*1024)}MB / {mem.total // (1024*1024)}MB  ({mem.percent}%) [{tag}]"
