@@ -13,3 +13,5 @@ imageio-ffmpeg
 nltk
 numpy
 psutil
+arabic_reshaper
+python-bidi
