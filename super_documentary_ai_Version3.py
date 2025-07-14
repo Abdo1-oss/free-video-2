@@ -1,653 +1,537 @@
 import streamlit as st
 import requests
 import tempfile
-import os
-import json
-import numpy as np
-from moviepy.editor import concatenate_videoclips, ImageClip, CompositeVideoClip, AudioFileClip, TextClip, concatenate_audioclips, VideoFileClip
-from PIL import Image
-import io
-from gtts import gTTS
-import nltk
-import re
 import random
-import wave
-import struct
-import psutil  # Memory monitoring
+import os
+from pydub import AudioSegment, silence
+from moviepy.editor import (
+    VideoFileClip, AudioFileClip, concatenate_videoclips, vfx, CompositeVideoClip, ImageClip
+)
+import cv2
+import cohere
+from PIL import Image, ImageDraw, ImageFont
+import numpy as np
+import arabic_reshaper
+from bidi.algorithm import get_display
 
-try:
-    nltk.data.find('tokenizers.punkt')
-except LookupError:
-    nltk.download('punkt')
-
-PEXELS_API_KEY = "pLcIoo3oNdhqna28AfdaBYhkE3SFps9oRGuOsxY3JTe92GcVDZpwZE9i"
-UNSPLASH_ACCESS_KEY = "SDK5avSHNm9lcNhhLhT_SzUdzd98hYX0BVjswi3ZHzU"
-PIXABAY_API_KEY = "50380897-76243eaec536038f687ff8e15"
+# ------------ إعدادات API KEYS ------------
 COHERE_API_KEY = "K1GW0y2wWiwW7xlK7db7zZnqX7sxfRVGiWopVfCD"
+PEXELS_API_KEY = "pLcIoo3oNdhqna28AfdaBYhkE3SFps9oRGuOsxY3JTe92GcVDZpwZE9i"
+PIXABAY_API_KEY = "50380897-76243eaec536038f687ff8e15"
 
-GTTS_VOICES = [
-    {"name": "English (US) - Female", "lang": "en", "tld": "com"},
-    {"name": "English (UK) - Female", "lang": "en", "tld": "co.uk"},
-    {"name": "French (France) - Female", "lang": "fr", "tld": "fr"},
-    {"name": "Spanish (Spain) - Female", "lang": "es", "tld": "es"},
-    {"name": "German (Germany) - Female", "lang": "de", "tld": "de"},
+QURAA = [
+    {"name": "الحصري مرتل", "id": "Husary_64kbps"},
+    {"name": "المنشاوي مرتل", "id": "Minshawy_Murattal_128kbps"},
+    {"name": "عبد الباسط مرتل", "id": "Abdul_Basit_Murattal_64kbps"},
+    {"name": "الغامدي", "id": "Ghamadi_40kbps"},
+    {"name": "المعيقلي", "id": "MaherAlMuaiqly_64kbps"},
+    {"name": "العفاسي", "id": "Alafasy_64kbps"},
+    {"name": "الشريم", "id": "Shuraym_64kbps"},
+    {"name": "فارس عباد", "id": "Fares_Abbad_64kbps"},
+    {"name": "الشاطري", "id": "Shatri_64kbps"},
+    {"name": "أبو بكر الشاطري", "id": "Abu_Bakr_Ash-Shaatree_128kbps"},
+    {"name": "محمد أيوب", "id": "Muhammad_Ayyoub_128kbps"},
+    {"name": "ياسر الدوسري", "id": "Yasser_Ad-Dussary_128kbps"},
+    {"name": "أحمد العجمي", "id": "Ajamy_64kbps"},
+    {"name": "إدريس أبكر", "id": "Idrees_Abkar_48kbps"},
+    {"name": "خليفة الطنيجي", "id": "Tunaiji_64kbps"},
+    {"name": "عبد الله بصفر", "id": "Basfar_48kbps"},
+    {"name": "الحصري مجود", "id": "Husary_Mujawwad_128kbps"},
+    {"name": "محمد جبريل", "id": "Jibreel_64kbps"},
+    {"name": "علي جابر", "id": "Ali_Jaber_64kbps"},
+    {"name": "المنشاوي مجود", "id": "Minshawy_Mujawwad_128kbps"}
 ]
 
-def print_memory_usage(tag=""):
-    mem = psutil.virtual_memory()
-    msg = f"🔋 RAM used {mem.used // (1024*1024)}MB / {mem.total // (1024*1024)}MB  ({mem.percent}%) [{tag}]"
-    print(msg)
-    st.info(msg)
+SURA_NAMES = [
+    "الفاتحة", "البقرة", "آل عمران", "النساء", "المائدة", "الأنعام", "الأعراف", "الأنفال", "التوبة", "يونس", "هود", "يوسف", "الرعد",
+    "إبراهيم", "الحجر", "النحل", "الإسراء", "الكهف", "مريم", "طه", "الأنبياء", "الحج", "المؤمنون", "النور", "الفرقان", "الشعراء",
+    "النمل", "القصص", "العنكبوت", "الروم", "لقمان", "السجدة", "الأحزاب", "سبأ", "فاطر", "يس", "الصافات", "ص", "الزمر", "غافر",
+    "فصلت", "الشورى", "الزخرف", "الدخان", "الجاثية", "الأحقاف", "محمد", "الفتح", "الحجرات", "ق", "الذاريات", "الطور", "النجم",
+    "القمر", "الرحمن", "الواقعة", "الحديد", "المجادلة", "الحشر", "الممتحنة", "الصف", "الجمعة", "المنافقون", "التغابن", "الطلاق",
+    "التحريم", "الملك", "القلم", "الحاقة", "المعارج", "نوح", "الجن", "المزمل", "المدثر", "القيامة", "الإنسان", "المرسلات", "النبأ",
+    "النازعات", "عبس", "التكوير", "الانفطار", "المطففين", "الانشقاق", "البروج", "الطارق", "الأعلى", "الغاشية", "الفجر", "البلد",
+    "الشمس", "الليل", "الضحى", "الشرح", "التين", "العلق", "القدر", "البينة", "الزلزلة", "العاديات", "القارعة", "التكاثر", "العصر",
+    "الهمزة", "الفيل", "قريش", "الماعون", "الكوثر", "الكافرون", "النصر", "المسد", "الإخلاص", "الفلق", "الناس"
+]
 
-def safe_download_and_convert_image(media_url, temp_files):
-    try:
-        response = requests.get(media_url, timeout=10)
-        img_data = response.content
-        if len(img_data) < 80_000:
-            print(f"Image too small in bytes: {media_url} ({len(img_data)} bytes)")
-            return None
-        img_bytes = io.BytesIO(img_data)
-        with Image.open(img_bytes) as pil_img:
-            pil_img = pil_img.convert("RGB")
-            width, height = pil_img.size
-            if width < 50 or height < 50:
-                print(f"Image too small in dimensions: {media_url} ({width}x{height})")
-                return None
-            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_img:
-                pil_img.save(tmp_img.name)
-                img_path = tmp_img.name
-                temp_files.append(img_path)
-        return img_path
-    except Exception as e:
-        print(f"Failed to process image: {media_url}, error: {e}")
-        return None
+SURA_AYAHS = [
+    7, 286, 200, 176, 120, 165, 206, 75, 129, 109, 123, 111, 43, 52, 99, 128, 111, 110, 98, 135, 112, 78, 118, 64, 77, 227, 93, 88, 69, 60, 34, 30, 73, 54, 45, 83, 182, 88, 75, 85, 54, 53, 89, 59, 37, 35, 38, 29, 18, 45, 60, 49, 62, 55, 78, 96, 29, 22, 24, 13, 14, 11, 11, 18, 12, 12, 30, 52, 52, 44, 28, 28, 20, 56, 40, 31, 50, 40, 46, 42, 29, 19, 36, 25, 22, 17, 19, 26, 30, 20, 15, 21, 11, 8, 8, 19, 5, 8, 8, 11, 11, 8, 3, 9, 5, 4, 7, 3, 6, 3, 5, 4, 5, 6
+]
 
-def search_pexels_photos_with_desc(query, per_page=1):
-    if not PEXELS_API_KEY: return []
-    headers = {"Authorization": PEXELS_API_KEY}
-    url = f"https://api.pexels.com/v1/search?query={query}&per_page={per_page}"
-    try:
-        data = requests.get(url, headers=headers, timeout=10).json()
-        return [("image", photo["src"]["large"], photo.get("alt") or query) for photo in data.get("photos", [])]
-    except Exception as e:
-        print(f"Pexels photos error: {e}")
-        return []
+def contains_people(text: str):
+    text = text.lower()
+    people_keywords = [
+        "person", "people", "man", "woman", "women", "men", "boy", "girl", "child", "children", "kids",
+        "kid", "human", "face", "portrait", "selfie", "friends", "couple", "wedding", "bride", "groom",
+        "student", "students", "body", "guy", "lady", "adult", "teen", "smile", "posing", "model",
+        "family", "father", "mother", "son", "daughter", "group", "crowd", "head", "eyes", "mouth",
+        "nose", "skin", "baby", "babies", "teacher", "worker", "doctor", "nurse"
+    ]
+    arabic_people = [
+        "شخص", "اشخاص", "وجوه", "انسان", "بشر", "رجل", "امرأة", "نساء", "رجال", "طفل", "اطفال",
+        "فتاة", "شباب", "صور شخصية", "عائلة", "مجموعة", "زفاف", "عرس", "صورة", "وجه", "أم", "أب",
+        "أصدقاء", "طالب", "طلاب", "طالبة", "معلم", "معلمة", "موظف", "طبيب"
+    ]
+    all_keywords = people_keywords + arabic_people
+    return any(word in text for word in all_keywords)
 
-def search_pexels_videos_with_desc(query, per_page=1):
-    if not PEXELS_API_KEY: return []
-    headers = {"Authorization": PEXELS_API_KEY}
-    url = f"https://api.pexels.com/videos/search?query={query}&per_page={per_page}"
-    try:
-        data = requests.get(url, headers=headers, timeout=10).json()
-        result = []
-        for v in data.get("videos", []):
-            if v.get("video_files"):
-                result.append(("video", v["video_files"][0]["link"], v.get("url", query)))
-        return result
-    except Exception as e:
-        print(f"Pexels videos error: {e}")
-        return []
+def is_shorts(width, height, duration, min_duration=7, max_duration=120):
+    ratio = width / height if height > 0 else 1
+    return (ratio < 0.7) and (min_duration <= duration <= max_duration)
 
-def search_unsplash_photos_with_desc(query, per_page=1):
-    if not UNSPLASH_ACCESS_KEY: return []
-    url = f"https://api.unsplash.com/search/photos?query={query}&per_page={per_page}&client_id={UNSPLASH_ACCESS_KEY}"
-    try:
-        data = requests.get(url, timeout=10).json()
-        return [("image", photo["urls"]["regular"], photo.get("alt_description") or query) for photo in data.get("results", [])]
-    except Exception as e:
-        print(f"Unsplash error: {e}")
-        return []
+def get_best_video_file(video_files):
+    best = None
+    for f in sorted(video_files, key=lambda vf: vf['height']):
+        if f['height'] >= 360:
+            if not best or f['height'] < best['height']:
+                best = f
+    return best
 
-def search_pixabay_photos_with_desc(query, per_page=1):
-    if not PIXABAY_API_KEY: return []
-    url = f"https://pixabay.com/api/?key={PIXABAY_API_KEY}&q={query}&per_page={per_page}&image_type=photo"
-    try:
-        data = requests.get(url, timeout=10).json()
-        return [("image", hit["largeImageURL"], hit.get("tags", query)) for hit in data.get("hits", [])]
-    except Exception as e:
-        print(f"Pixabay error: {e}")
-        return []
-
-def search_pixabay_videos_with_desc(query, per_page=1):
-    if not PIXABAY_API_KEY: return []
-    url = f"https://pixabay.com/api/videos/?key={PIXABAY_API_KEY}&q={query}&per_page={per_page}"
-    try:
-        data = requests.get(url, timeout=10).json()
-        return [("video", v["videos"]["medium"]["url"], v.get("tags", query)) for v in data.get("hits", []) if "videos" in v]
-    except Exception as e:
-        print(f"Pixabay videos error: {e}")
-        return []
-
-def search_wikimedia_photos_with_desc(query, limit=1):
-    url = f"https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch={query}&gsrlimit={limit}&prop=imageinfo|description&iiprop=url&format=json"
-    try:
-        response = requests.get(url, timeout=10)
-        pages = response.json().get("query", {}).get("pages", {})
-        result = []
-        for v in pages.values():
-            img_url = v.get("imageinfo", [{}])[0].get("url")
-            desc = v.get("title", query)
-            if img_url:
-                result.append(("image", img_url, desc))
-        return result
-    except Exception as e:
-        print(f"Wikimedia error: {e}")
-        return []
-
-def search_pollinations_photos_with_desc(prompt, per_page=1):
-    results = []
-    for _ in range(per_page):
-        img_url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(prompt)}"
-        results.append(("image", img_url, prompt))
-    return results
-
-def generate_script_with_cohere(prompt, max_tokens=1000, temperature=0.7, model="command"):
-    url = "https://api.cohere.ai/v1/generate"
-    headers = {
-        "Authorization": f"Bearer {COHERE_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    data = {
-        "model": model,
-        "prompt": prompt,
-        "max_tokens": max_tokens,
-        "temperature": temperature
-    }
-    response = requests.post(url, headers=headers, json=data)
-    if response.status_code == 200:
-        return response.json()["generations"][0]["text"]
-    else:
-        st.error(f"Cohere API error: {response.status_code}\n{response.text}")
-        return ""
-
-def generate_script_from_media_cohere(media_list, topic, lang="en", max_tokens=1000, temperature=0.4):
-    prompt = f"""I have a collection of photos and videos about "{topic}":\n"""
-    for i, (_, url, desc) in enumerate(media_list, 1):
-        prompt += f"{i}. {desc.strip()}\n"
-    prompt += f"""
-Write a short, smooth, documentary script (one story, not disconnected sentences) that covers these photos and videos in order, without mentioning the word "photo", "scene", or numbers, and no repetition.
-"""
-    return generate_script_with_cohere(prompt, max_tokens=max_tokens, temperature=temperature)
-
-def filter_script_sentences(raw_text, num_media):
-    try:
-        sentences = nltk.sent_tokenize(raw_text)
-    except Exception:
-        sentences = raw_text.split('.')
-    sentences = [s.strip() for s in sentences if s.strip()]
-    filtered = []
-    for s in sentences:
-        if len(s) > 5:
-            filtered.append(s)
-    if len(filtered) > num_media:
-        filtered = filtered[:num_media]
-    while len(filtered) < num_media:
-        filtered.append("...")
-    return filtered
-
-def get_audio_duration(audio_path):
-    try:
-        ac = AudioFileClip(audio_path)
-        duration = ac.duration
-        ac.close()
-        return duration
-    except Exception as e:
-        print(f"Audio duration error: {e}")
-        return 2
-
-def animated_text_clip(img_clip, text, duration, lang="en", mode="sentence", group_size=1, font_size=40, color="white", text_pos="bottom"):
-    items = [text]
-    item_dur = duration
-    txt_clips = []
-    for i, item in enumerate(items):
-        font = "Arial"
-        if lang == "fr":
-            font = "Liberation-Serif"
-        txt = TextClip(
-            item, fontsize=font_size, color=color, font=font,
-            size=img_clip.size, method='caption', align='center'
-        ).set_duration(item_dur).set_start(i * item_dur)
-        margin = 30
+def get_pexels_shorts_videos(api_key, needed_duration, keywords):
+    headers = {"Authorization": api_key}
+    shorts = []
+    for keyword in keywords:
+        params = {"query": keyword, "per_page": 30}
+        resp = requests.get("https://api.pexels.com/videos/search", headers=headers, params=params)
         try:
-            h = txt.h
-        except:
-            h = font_size + 10
-        if text_pos == "bottom":
-            txt = txt.set_position(("center", img_clip.h - h - margin))
-        elif text_pos == "top":
-            txt = txt.set_position(("center", margin))
-        elif text_pos == "center":
-            txt = txt.set_position("center")
-        else:
-            txt = txt.set_position(text_pos)
-        txt_clips.append(txt)
-    return CompositeVideoClip([img_clip] + txt_clips).set_duration(duration)
+            videos = resp.json().get('videos', [])
+        except Exception:
+            continue
+        for v in videos:
+            desc = (v.get("description") or "")
+            user_name = (v.get("user", {}).get("name") or "")
+            tags = [t for t in v.get("tags",[])]
+            title = (v.get("title") or "")
+            text = " ".join(tags) + " " + desc + " " + user_name + " " + title
+            if contains_people(text):
+                continue
+            best_file = get_best_video_file(v["video_files"])
+            if best_file and is_shorts(best_file["width"], best_file["height"], v["duration"]):
+                shorts.append({"link": best_file["link"], "duration": v["duration"], "title": v.get("description",'')})
+    return shorts
 
-def resize_and_letterbox(img_clip, target_w=1280, target_h=720):
-    img_clip = img_clip.resize(height=target_h)
-    if img_clip.w > target_w:
-        img_clip = img_clip.crop(x_center=img_clip.w/2, width=target_w)
-    elif img_clip.w < target_w:
-        img_clip = img_clip.margin(left=(target_w-img_clip.w)//2, right=(target_w-img_clip.w)//2, color=(0,0,0))
-    return img_clip
-
-def random_watermark_positions(duration, w, h, txt_w=200, txt_h=30, step=0.5):
-    positions = []
-    t = 0
-    while t < duration:
-        x = random.randint(0, max(0, w-txt_w))
-        y = random.randint(0, max(0, h-txt_h))
-        positions.append((t, (x, y)))
-        t += step
-    return positions
-
-def choose_music_for_topic(topic):
-    topic = topic.lower()
-    if "nature" in topic:
-        return "music/nature.mp3"
-    elif "car" in topic:
-        return "music/cars.mp3"
-    elif "space" in topic:
-        return "music/space.mp3"
-    elif "history" in topic:
-        return "music/history.mp3"
-    else:
-        return "music/default.mp3"
-
-def safe_tts_save(text, mp3_path, lang, tld):
-    if not text or not text.strip() or text.strip() == "...":
-        with wave.open(mp3_path, 'w') as f:
-            f.setnchannels(1)
-            f.setsampwidth(2)
-            f.setframerate(22050)
-            duration_seconds = 1
-            samples = [0] * int(22050 * duration_seconds)
-            for s in samples:
-                f.writeframes(struct.pack('<h', s))
-        return
-    tts = gTTS(text=text, lang=lang, tld=tld)
-    tts.save(mp3_path)
-
-def assemble_video(
-    montage, out_path, color="#FFFFFF", text_size=32, text_pos="bottom",
-    logo_path=None, music_path=None, watermark_text="", gif_export=False, square_export=False, youtube_export=False,
-    text_anim_mode="sentence", text_anim_group_size=1, text_anim_lang="en"
-):
-    clips = []
-    audio_clips = []
-    temp_files = []
-    print_memory_usage("Start assemble_video")
-    for idx, (media_type, media_url, audio_path, sent) in enumerate(montage):
-        print(f"Scene {idx+1}: media_type={media_type}, media_url={media_url}")
-        print_memory_usage(f"scene_{idx+1}_start")
+def get_pixabay_shorts_videos(api_key, needed_duration, keywords):
+    shorts = []
+    for keyword in keywords:
+        params = {
+            "key": api_key,
+            "q": keyword,
+            "per_page": 30,
+            "video_type": "film",
+            "safesearch": "true"
+        }
+        resp = requests.get("https://pixabay.com/api/videos/", params=params)
         try:
-            duration = get_audio_duration(audio_path)
-            audio_clip = AudioFileClip(audio_path)
-            audio_clips.append(audio_clip)
-            if media_type == "video":
-                print(f"Processing video: {media_url}")
-                try:
-                    clip = VideoFileClip(media_url)
-                    if clip.duration > duration:
-                        clip = clip.subclip(0, duration)
-                    else:
-                        clip = clip.set_duration(duration)
-                    clip = clip.resize(height=720)
-                    if clip.w > 1280:
-                        clip = clip.crop(x_center=clip.w/2, width=1280)
-                    elif clip.w < 1280:
-                        clip = clip.margin(left=(1280-clip.w)//2, right=(1280-clip.w)//2, color=(0,0,0))
-                    anim_txt = animated_text_clip(
-                        clip.set_duration(duration),
-                        sent,
-                        duration,
-                        lang=text_anim_lang,
-                        mode=text_anim_mode,
-                        group_size=text_anim_group_size,
-                        font_size=text_size,
-                        color=color,
-                        text_pos=text_pos
-                    )
-                    clips.append(anim_txt)
-                except Exception as e:
-                    print(f"Video error: {e}, skipping video scene.")
-                    continue
-            elif media_type == "image":
-                print(f"Processing image: {media_url}")
-                img_path = media_url
-                if isinstance(img_path, str) and img_path.startswith("http"):
-                    img_path = safe_download_and_convert_image(img_path, temp_files)
-                    if img_path is None:
-                        print(f"Skipping image (bad, too small, or too small in bytes): {media_url}")
-                        continue
-                try:
-                    if hasattr(Image, 'Resampling'):
-                        pil = Image.open(img_path).resize((1280, 720), Image.Resampling.LANCZOS)
-                        img_clip = ImageClip(np.array(pil))
-                    else:
-                        img_clip = ImageClip(img_path)
-                    img_clip = resize_and_letterbox(img_clip, target_w=1280, target_h=720)
-                except Exception as e:
-                    print(f"ImageClip error: {e}")
-                    continue
-                img_clip = img_clip.set_duration(duration)
-                anim_txt = animated_text_clip(
-                    img_clip,
-                    sent,
-                    duration,
-                    lang=text_anim_lang,
-                    mode=text_anim_mode,
-                    group_size=text_anim_group_size,
-                    font_size=text_size,
-                    color=color,
-                    text_pos=text_pos
-                )
-                clips.append(anim_txt)
-            print(f"Scene {idx+1} processed successfully.")
-            print_memory_usage(f"scene_{idx+1}_end")
-        except Exception as e:
-            print(f"Error in scene {idx+1}: {e}")
-    if not clips or not audio_clips:
-        st.error("Could not build the final video.")
+            videos = resp.json().get("hits", [])
+        except Exception:
+            continue
+        for v in videos:
+            tags = (v.get("tags") or "")
+            user = (v.get("user") or "")
+            title = (v.get("title") or "")
+            text = tags + " " + user + " " + title
+            if contains_people(text):
+                continue
+            best_file = None
+            for quality, vid in v["videos"].items():
+                if vid["height"] >= 360 and (not best_file or vid["height"] < best_file["height"]):
+                    best_file = vid
+            if best_file and is_shorts(best_file["width"], best_file["height"], v["duration"]):
+                shorts.append({"link": best_file["url"], "duration": v["duration"], "title": v.get("tags",'')})
+    return shorts
+
+def get_mixkit_shorts_videos(needed_duration, keywords):
+    mixkit_links = [
+        "https://assets.mixkit.co/videos/download/mixkit-clouds-in-the-sky-123.mp4",
+        "https://assets.mixkit.co/videos/download/mixkit-mountain-landscape-1233.mp4",
+        "https://assets.mixkit.co/videos/download/mixkit-sunrise-in-the-mountains-1176.mp4",
+        "https://assets.mixkit.co/videos/download/mixkit-forest-trees-1234.mp4",
+        "https://assets.mixkit.co/videos/download/mixkit-stars-in-night-sky-1186.mp4",
+        "https://assets.mixkit.co/videos/download/mixkit-moon-in-the-night-sky-1354.mp4",
+        "https://assets.mixkit.co/videos/download/mixkit-rain-clouds-mountain-1173.mp4",
+        "https://assets.mixkit.co/videos/download/mixkit-starry-night-sky-1214.mp4"
+    ]
+    shorts = []
+    for link in mixkit_links:
+        shorts.append({"link": link, "duration": 15, "title": "Mixkit Nature"})
+    return shorts
+
+def get_coverr_shorts_videos(needed_duration, keywords):
+    coverr_links = [
+        "https://www.coverr.co/s3/mp4/river.mp4",
+        "https://www.coverr.co/s3/mp4/forest.mp4",
+        "https://www.coverr.co/s3/mp4/space.mp4"
+    ]
+    shorts = []
+    for link in coverr_links:
+        shorts.append({"link": link, "duration": 20, "title": "Coverr Nature"})
+    return shorts
+
+def download_and_get_clip(url, used_links, resize=(1080,1920)):
+    headers = {"User-Agent": "Mozilla/5.0"}
+    resp = requests.get(url, stream=True, headers=headers)
+    if resp.status_code != 200:
         return None, None
-    print_memory_usage("Before audio/video concat")
-    final_audio = concatenate_audioclips(audio_clips)
-    final_clip = concatenate_videoclips(clips, method="compose")
-    final_clip = final_clip.set_audio(final_audio)
-    final_clip = final_clip.subclip(0, final_audio.duration)
-    if youtube_export:
-        final_clip = final_clip.resize(height=720)
-        if final_clip.w != 1280:
-            final_clip = final_clip.crop(x_center=final_clip.w/2, width=1280, height=720)
-    if logo_path:
-        logo = (ImageClip(logo_path)
-                .set_duration(final_clip.duration)
-                .resize(height=50)
-                .set_pos(("right", "top")).margin(right=8, top=8, opacity=0))
-        final_clip = CompositeVideoClip([final_clip, logo])
-    if not music_path or not os.path.exists(music_path):
-        music_path_auto = choose_music_for_topic(st.session_state.get("topic","") if "topic" in st.session_state else "")
-        if os.path.exists(music_path_auto):
-            music_path = music_path_auto
-    if music_path and os.path.exists(music_path):
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as file:
+        for chunk in resp.iter_content(chunk_size=1024*1024):
+            if chunk:
+                file.write(chunk)
+        file.flush()
+        clip = VideoFileClip(file.name).resize(newsize=resize)
+        if clip.duration < 2:
+            return None, file.name
+        if url in used_links:
+            return None, file.name
+        used_links.add(url)
+        return clip, file.name
+
+def trim_silence(audio_segment, silence_thresh=-40, chunk_size=10):
+    start_trim = silence.detect_leading_silence(audio_segment, silence_thresh, chunk_size)
+    end_trim = silence.detect_leading_silence(audio_segment.reverse(), silence_thresh, chunk_size)
+    duration = len(audio_segment)
+    return audio_segment[start_trim:duration-end_trim]
+
+def add_echo(sound, delay=250, attenuation=0.6):
+    echo = sound - 20
+    for i in range(1, 5):
+        echo = echo.overlay(sound - int(20 + i*10), position=i*delay)
+    return sound.overlay(echo)
+
+def blur_frame(img, ksize=15):
+    return cv2.GaussianBlur(img, (ksize|1, ksize|1), 0)
+
+def ken_burns_effect(clip, zoom=1.1, pan_direction='left'):
+    w, h = clip.size
+    if pan_direction == 'left':
+        return clip.fx(vfx.crop, x1=0, y1=0, x2=int(w*(1-1/zoom)), y2=0).fx(vfx.resize, width=w)
+    elif pan_direction == 'right':
+        return clip.fx(vfx.crop, x1=int(w*(1-1/zoom)), y1=0, x2=0, y2=0).fx(vfx.resize, width=w)
+    else:
+        return clip.fx(vfx.resize, lambda t: 1 + (zoom-1)*t/clip.duration)
+
+def add_vignette(clip, strength=0.6):
+    def vignette(image):
+        rows, cols = image.shape[:2]
+        kernel_x = cv2.getGaussianKernel(cols, 200)
+        kernel_y = cv2.getGaussianKernel(rows, 200)
+        kernel = kernel_y * kernel_x.T
+        mask = 255 * kernel / np.linalg.norm(kernel)
+        for i in range(3):
+            image[:,:,i] = image[:,:,i] * (1-strength) + mask * strength
+        return image
+    return clip.fl_image(vignette)
+
+def montage_effects(clip, do_bw, do_vignette, do_zoom, do_blur, vignette_strength, blur_strength):
+    if do_blur:
+        clip = clip.fl_image(lambda img: blur_frame(img, ksize=int(blur_strength)))
+    if do_zoom:
+        clip = ken_burns_effect(clip, zoom=1.13, pan_direction=random.choice(['left','right','center']))
+    if do_vignette:
+        clip = add_vignette(clip, strength=vignette_strength)
+    if do_bw:
+        clip = clip.fx(vfx.blackwhite)
+    return clip
+
+# ----------- الكود المصحح لرسم النص العربي بشكل مشكّل، متصل، RTL -----------
+
+def create_text_image(text, size, font_path="Amiri-Regular.ttf", fontsize=50):
+    # ✅ إعادة تشكيل النص العربي ليظهر بالحروف المتصلة والتشكيل
+    reshaped_text = arabic_reshaper.reshape(text)
+    bidi_text = get_display(reshaped_text)
+
+    img = Image.new("RGBA", size, (0,0,0,0))
+    draw = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype(font_path, fontsize)
+    except:
+        font = ImageFont.load_default()
+
+    # تقسيم النص لعدة أسطر من اليمين لليسار
+    lines = []
+    words = bidi_text.split()
+    line = ""
+    for word in words:
+        test_line = word if not line else word + " " + line
         try:
-            music_clip = AudioFileClip(music_path).volumex(0.15)
-            final_audio = concatenate_audioclips([final_clip.audio, music_clip])
-            final_clip = final_clip.set_audio(final_audio)
-        except Exception as e:
-            print(f"Music error: {e}")
-    if watermark_text:
+            bbox = draw.textbbox((0, 0), test_line, font=font)
+            w = bbox[2] - bbox[0]
+        except AttributeError:
+            w, _ = font.getsize(test_line)
+        if w <= size[0] - 40:
+            line = test_line
+        else:
+            lines.append(line)
+            line = word
+    if line:
+        lines.append(line)
+
+    total_text_height = len(lines) * fontsize + (len(lines)-1)*5
+    y = (size[1] - total_text_height) // 2
+    for l in reversed(lines):
         try:
-            txt_clip = TextClip(
-                watermark_text, fontsize=24, color='white', font='Arial-Bold',
-                size=(200, 30)
-            ).set_duration(final_clip.duration).set_opacity(0.4)
-            positions = random_watermark_positions(final_clip.duration, final_clip.w, final_clip.h, 200, 30, step=0.5)
-            def moving_position(t):
-                idx = int(t // 0.5)
-                return positions[idx][1] if idx < len(positions) else positions[-1][1]
-            txt_clip = txt_clip.set_position(moving_position)
-            final_clip = CompositeVideoClip([final_clip, txt_clip])
-        except Exception as e:
-            print(f"Watermark error: {e}")
-    print_memory_usage("Before write_videofile")
-    final_clip = final_clip.fadein(1).fadeout(1)
-    final_clip.write_videofile(out_path, codec="libx264", audio_codec="aac", preset="ultrafast", threads=4, fps=15)
-    print_memory_usage("After write_videofile")
-    for c in clips:
-        c.close()
-    for a in audio_clips:
-        a.close()
-    final_clip.close()
-    for f in temp_files:
+            bbox = draw.textbbox((0, 0), l, font=font)
+            w = bbox[2] - bbox[0]
+        except AttributeError:
+            w, _ = font.getsize(l)
+        x = (size[0] - w) // 2
+        draw.text((x, y), l, font=font, fill="white")
+        y += fontsize + 5
+
+    return np.array(img)
+
+def split_text_for_timings(full_text, words_per_clip=4):
+    words = full_text.split()
+    clips = []
+    i = 0
+    while i < len(words):
+        clips.append(" ".join(words[i:i+words_per_clip]))
+        i += words_per_clip
+    return clips
+
+def prepare_ayah_texts(ayat_texts):
+    bsm = "بسم الله الرحمن الرحيم"
+    output = []
+    joined = " ".join(ayat_texts)
+    if joined.startswith(bsm):
+        output.append(bsm)
+        rest = joined[len(bsm):].strip()
+        if rest:
+            output.extend(split_text_for_timings(rest))
+    else:
+        output.extend(split_text_for_timings(joined))
+    return output
+
+def get_clip_position(position, video_size, text_img_height):
+    w, h = video_size
+    if position == "bottom":
+        return ('center', h - text_img_height//2)
+    elif position == "top":
+        return ('center', 0)
+    else: # center
+        return ('center', (h - text_img_height)//2)
+
+def get_ayah_text_and_translation(sura_idx, ayah_num):
+    arabic, english = "", ""
+    url_ar = f"https://api.alquran.cloud/v1/ayah/{sura_idx}:{ayah_num}/ar"
+    r_ar = requests.get(url_ar)
+    if r_ar.ok:
+        arabic = r_ar.json().get("data", {}).get("text", "")
+    url_en = f"https://api.alquran.cloud/v1/ayah/{sura_idx}:{ayah_num}/en.asad"
+    r_en = requests.get(url_en)
+    if r_en.ok:
+        english = r_en.json().get("data", {}).get("text", "")
+    return arabic, english
+
+def get_keywords_from_cohere(arabic, english):
+    co = cohere.Client(COHERE_API_KEY)
+    prompt = f"""Given this Quran verse and its English translation, suggest 7-10 English visual keywords suitable for searching background videos (avoid humans, faces, people, and forbidden things).
+Verse: {arabic}
+Translation: {english}
+List only the keywords, comma-separated:"""
+    response = co.generate(
+        model="command",
+        prompt=prompt,
+        max_tokens=60,
+        temperature=0.3,
+        stop_sequences=["\n"]
+    )
+    kws = response.generations[0].text.strip()
+    return [k.strip() for k in kws.replace('\n','').split(',') if k.strip()]
+
+
+# ========== Streamlit App ==========
+st.set_page_config(page_title="فيديو قرآن شورتس ذكي", layout="centered")
+st.title("أنشئ فيديو قرآن قصير (شورتس) بخلفية ذكية وتأثيرات متقدمة")
+
+text_position_choice = st.selectbox(
+    "اختر مكان عرض النص على الفيديو",
+    [("أسفل", 'bottom'), ("وسط", 'center'), ("أعلى", 'top')],
+    format_func=lambda x: x[0]
+)
+text_position = text_position_choice[1]
+
+qari_names = [q["name"] for q in QURAA]
+selected_qari_idx = st.selectbox("اختر القارئ:", options=range(len(qari_names)), format_func=lambda i: qari_names[i])
+selected_qari = QURAA[selected_qari_idx]["id"]
+
+sura_idx = st.selectbox("اختر السورة:", options=range(1, 115), format_func=lambda i: f"{i}. {SURA_NAMES[i-1]}")
+ayah_count = SURA_AYAHS[sura_idx-1]
+
+col1, col2 = st.columns(2)
+with col1:
+    from_ayah = st.number_input("من الآية رقم:", min_value=1, max_value=ayah_count, value=1)
+with col2:
+    to_ayah = st.number_input("إلى الآية رقم:", min_value=from_ayah, max_value=ayah_count, value=from_ayah)
+
+video_sources = st.multiselect(
+    "اختر مصادر الفيديو (يمكنك تحديد أكثر من مصدر):",
+    options=["Pexels", "Pixabay", "Mixkit", "Coverr"],
+    default=["Pexels", "Pixabay", "Mixkit", "Coverr"]
+)
+
+st.markdown("**خيارات تخصيص المؤثرات**:")
+
+col3, col4, col5 = st.columns(3)
+with col3:
+    video_speed = st.slider("سرعة الفيديو", 0.5, 2.0, 1.0, 0.05)
+with col4:
+    blur_strength = st.slider("شدة الضباب (Blur)", 0, 50, 15)
+with col5:
+    vignette_strength = st.slider("قوة التدرج اللوني (Vignette)", 0.0, 1.0, 0.3)
+
+do_bw = st.checkbox("أبيض وأسود", False)
+do_vignette = st.checkbox("تدرج لوني حول الحواف", True)
+do_zoom = st.checkbox("تأثير زوم متحرك (Ken Burns)", True)
+do_blur = st.checkbox("ضباب (Blur)", True)
+do_echo = st.checkbox("صدى على الصوت", True)
+
+aspect = st.selectbox("أبعاد الفيديو:", ["عمودي (9:16)", "أفقي (16:9)", "مربع (1:1)"])
+aspect_map = {"عمودي (9:16)": (1080,1920), "أفقي (16:9)": (1920,1080), "مربع (1:1)": (1080,1080)}
+
+uploaded_file = st.file_uploader("ارفع فيديو/صورة خلفية (اختياري)")
+
+st.markdown("الخلفية يمكن أن تكون أي موضوع (مدينة، هندسة، فضاء... إلخ)، الشرط الوحيد ألا تحتوي على أشخاص أو وجوه.")
+
+if st.button("إنشاء الفيديو"):
+    try:
+        st.info("تحليل الآيات وجلب الكلمات المفتاحية الذكية...")
+        ayah_ar, ayah_en = get_ayah_text_and_translation(sura_idx, from_ayah)
+        keywords = get_keywords_from_cohere(ayah_ar, ayah_en)
+        st.caption("الكلمات المفتاحية الذكية: " + ', '.join(keywords))
+
+        with st.spinner("جاري تحميل ودمج الصوت..."):
+            merged = None
+            missing_ayahs = []
+            default_silence_ms = 3000
+            ayat_texts = []
+            for ayah in range(int(from_ayah), int(to_ayah)+1):
+                mp3_url = f"https://everyayah.com/data/{selected_qari}/{sura_idx:03d}{ayah:03d}.mp3"
+                r = requests.get(mp3_url)
+                ar, _ = get_ayah_text_and_translation(sura_idx, ayah)
+                ayat_texts.append(ar)
+                if r.status_code != 200:
+                    missing_ayahs.append(ayah)
+                    segment = AudioSegment.silent(duration=default_silence_ms)
+                else:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_ayah_file:
+                        temp_ayah_file.write(r.content)
+                        temp_ayah_file.flush()
+                        segment = AudioSegment.from_mp3(temp_ayah_file.name)
+                        segment = trim_silence(segment)
+                merged = segment if merged is None else merged + segment
+            if not merged:
+                st.error("لم يتم العثور على أي آية صوتية متاحة لهذا القارئ في هذا المقطع.")
+                st.stop()
+            if do_echo:
+                merged = add_echo(merged)
+            fade_in_duration_ms = 2000
+            fade_out_duration_ms = min(2000, int(len(merged) * 0.1))
+            merged = merged.fade_in(fade_in_duration_ms).fade_out(fade_out_duration_ms)
+            if missing_ayahs:
+                st.warning(f"بعض الآيات غير متوفرة وتم وضع صمت مكانها: {', '.join(str(a) for a in missing_ayahs)}")
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as merged_file:
+                merged.export(merged_file.name, format="mp3")
+                audio_path = merged_file.name
+
+        audio_clip = AudioFileClip(audio_path).fx(vfx.speedx, video_speed)
+        duration = audio_clip.duration
+
+        resize = aspect_map[aspect]
+        video_clips = []
+        used_links = set()
+        if uploaded_file:
+            file_ext = os.path.splitext(uploaded_file.name)[-1]
+            with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as f:
+                f.write(uploaded_file.read())
+                f.flush()
+                if file_ext.lower() in ['.mp4', '.mov', '.avi']:
+                    user_clip = VideoFileClip(f.name).resize(newsize=resize).subclip(0, min(duration, VideoFileClip(f.name).duration))
+                else:
+                    user_clip = ImageClip(f.name, duration=duration).resize(newsize=resize)
+                video_clips.append(user_clip)
+        else:
+            with st.spinner("جاري تحميل وتجهيز فيديوهات الخلفية..."):
+                shorts = []
+                if "Pexels" in video_sources:
+                    shorts += get_pexels_shorts_videos(PEXELS_API_KEY, duration, keywords)
+                if "Pixabay" in video_sources:
+                    shorts += get_pixabay_shorts_videos(PIXABAY_API_KEY, duration, keywords)
+                if "Mixkit" in video_sources:
+                    shorts += get_mixkit_shorts_videos(duration, keywords)
+                if "Coverr" in video_sources:
+                    shorts += get_coverr_shorts_videos(duration, keywords)
+                random.shuffle(shorts)
+                downloaded_duration = 0.0
+                shorts_index = 0
+                while downloaded_duration < duration and shorts_index < len(shorts):
+                    video_obj = shorts[shorts_index]
+                    link = video_obj["link"]
+                    shorts_index += 1
+                    if link in used_links:
+                        continue
+                    clip, fname = download_and_get_clip(link, used_links, resize=resize)
+                    if not clip:
+                        continue
+                    clip = montage_effects(
+                        clip,
+                        do_bw=do_bw,
+                        do_vignette=do_vignette,
+                        do_zoom=do_zoom,
+                        do_blur=do_blur,
+                        vignette_strength=vignette_strength,
+                        blur_strength=blur_strength
+                    )
+                    if downloaded_duration + clip.duration > duration:
+                        clip = clip.subclip(0, duration-downloaded_duration)
+                    video_clips.append(clip)
+                    downloaded_duration += clip.duration
+                if not video_clips or downloaded_duration < duration:
+                    st.error("لم يتم العثور على فيديوهات كافية أو مناسبة لتغطية مدة الصوت. حاول مجددًا أو قلل المقطع الصوتي.")
+                    st.stop()
+
+        final_video = concatenate_videoclips(video_clips).subclip(0, duration).fx(vfx.speedx, video_speed)
+        final = final_video.set_audio(audio_clip).set_duration(duration)
+
+        text_chunks = prepare_ayah_texts(ayat_texts)
+        chunk_count = len(text_chunks)
+        chunk_duration = duration / chunk_count if chunk_count else duration
+
+        font_path = "Amiri-Regular.ttf"
+        if not os.path.exists(font_path):
+            font_path = "Arial"
+        img_height = 200
+        video_w, video_h = resize
+
+        text_clips = []
+        for i, chunk in enumerate(text_chunks):
+            text_img = create_text_image(chunk, (video_w, img_height), font_path, 50)
+            start_time = i * chunk_duration
+            end_time = min((i+1) * chunk_duration, duration)
+            text_clip = (
+                ImageClip(text_img, duration=end_time-start_time)
+                .set_start(start_time)
+                .set_position(get_clip_position(text_position, resize, img_height))
+            )
+            text_clips.append(text_clip)
+
+        final_with_text = CompositeVideoClip([final] + text_clips)
+
+        output_path = "quran_shorts.mp4"
+        with st.spinner("جاري تصدير الفيديو النهائي..."):
+            final_with_text.write_videofile(output_path, fps=24, codec="libx264", audio_codec="aac")
+        st.success("تم إنشاء الفيديو بنجاح!")
+        st.video(output_path)
+        with open(output_path, "rb") as f:
+            st.download_button("تحميل الفيديو", f, file_name="quran_shorts.mp4", mime="video/mp4")
+
+        # تنظيف الملفات المؤقتة
         try:
-            os.remove(f)
+            os.remove(audio_path)
+            for clip in video_clips:
+                if hasattr(clip, 'filename') and os.path.exists(clip.filename):
+                    os.remove(clip.filename)
         except Exception:
             pass
-    print_memory_usage("End assemble_video")
-    return out_path, final_audio.duration
 
-st.set_page_config(page_title="AI Documentary Generator", layout="wide")
-st.title("🎬 AI Documentary Generator (Images, Video, Voice-over)")
-
-mode = st.radio("Project Type", ["New Project", "Restore Project"])
-
-if mode == "Restore Project":
-    uploaded_project = st.file_uploader("Upload project file (json):", type="json")
-    if uploaded_project:
-        project_data = json.load(uploaded_project)
-        st.success("Project restored!")
-        st.json(project_data)
-else:
-    st.markdown("**Enter your topic, choose number of scenes, select media sources, and let AI create a documentary video!**")
-    topic = st.text_input("Video topic (e.g., Smart Cars)")
-    st.session_state["topic"] = topic
-    num_media = st.slider("Number of scenes:", min_value=2, max_value=30, value=5)
-    script_mode = st.radio(
-        "Script source:",
-        ["AI-generated script (Cohere)", "Script from media (Cohere)", "Write script manually"], index=0)
-    script_text = ""
-    cohere_tokens = st.slider("Approximate script length (tokens):", 100, 10000, 1000, step=50)
-    cohere_temp = st.slider("Creativity:", 0.1, 1.0, 0.4, step=0.05)
-    if script_mode == "Write script manually":
-        script_text = st.text_area("Write your documentary script here:", height=300)
-    sources_selected = st.multiselect(
-        "Photo/Video sources:",
-        options=["Pexels", "Unsplash", "Pixabay", "Wikimedia", "Pollinations"],
-        default=["Pexels", "Unsplash", "Pixabay", "Wikimedia"]
-    )
-    logo_file = st.file_uploader("Logo (optional):", type=["png", "jpg", "jpeg"])
-    music_file = st.file_uploader("Background music (optional):", type=["mp3", "wav"])
-    youtube_export = st.checkbox("YouTube export (16:9)", value=True)
-    watermark = st.text_input("Watermark text (optional):", value="@SuperAI")
-    color = st.color_picker("Text color", "#ffffff")
-    text_size = st.slider("Text size", 14, 60, 28)
-    text_pos = st.radio("Text position", options=["top", "center", "bottom"], index=2)
-    gif_export = st.checkbox("Export as GIF", value=False)
-    square_export = st.checkbox("Export square video (Instagram)", value=False)
-    voice_choice = st.selectbox("Voice-over voice:", [v["name"] for v in GTTS_VOICES])
-    voice_data = next(v for v in GTTS_VOICES if v["name"] == voice_choice)
-    text_anim_mode_val = "sentence"
-    text_anim_group_size = 1
-    text_anim_lang = voice_data["lang"]
-
-    if "editable_script" not in st.session_state:
-        st.session_state["editable_script"] = ""
-    if "media_list" not in st.session_state:
-        st.session_state["media_list"] = []
-    if "last_num_media" not in st.session_state:
-        st.session_state["last_num_media"] = 0
-
-    if st.button("Generate!"):
-        progress_bar = st.progress(0, text="Starting ...")
-        if script_mode == "Write script manually" and not script_text.strip():
-            st.error("Please enter the script text.")
-        elif script_mode != "Write script manually" and not topic.strip():
-            st.error("Please enter a topic.")
-        elif not COHERE_API_KEY:
-            st.error("Cohere API key not found!")
-        else:
-            with st.spinner("Generating ..."):
-                progress_bar.progress(5, text="Generating script ...")
-                media_list = []
-                if script_mode == "Script from media (Cohere)":
-                    all_media = []
-                    n_each = max(1, num_media // (2 * len(sources_selected)))
-                    for src in sources_selected:
-                        if src == "Pexels":
-                            all_media += search_pexels_photos_with_desc(topic, per_page=n_each)
-                            all_media += search_pexels_videos_with_desc(topic, per_page=n_each)
-                        if src == "Unsplash":
-                            all_media += search_unsplash_photos_with_desc(topic, per_page=n_each*2)
-                        if src == "Pixabay":
-                            all_media += search_pixabay_photos_with_desc(topic, per_page=n_each)
-                            all_media += search_pixabay_videos_with_desc(topic, per_page=n_each)
-                        if src == "Wikimedia":
-                            all_media += search_wikimedia_photos_with_desc(topic, limit=n_each*2)
-                        if src == "Pollinations":
-                            pollinations_prompt = f"Highly detailed, cinematic, {topic.strip()}. Documentary style, professional, vibrant colors."
-                            all_media += search_pollinations_photos_with_desc(pollinations_prompt, per_page=n_each*2)
-                    photos = [m for m in all_media if m[0] == "image"]
-                    videos = [m for m in all_media if m[0] == "video"]
-                    media_list = []
-                    i = j = 0
-                    for k in range(num_media):
-                        if k % 2 == 0 and i < len(photos):
-                            media_list.append(photos[i])
-                            i += 1
-                        elif j < len(videos):
-                            media_list.append(videos[j])
-                            j += 1
-                        elif i < len(photos):
-                            media_list.append(photos[i])
-                            i += 1
-                        elif j < len(videos):
-                            media_list.append(videos[j])
-                            j += 1
-                    media_list = media_list[:num_media]
-                    if not media_list:
-                        st.error("Not enough media found. Try reducing the number or enabling more sources.")
-                        st.stop()
-                    for i, (media_type, url, desc) in enumerate(media_list):
-                        if media_type == "image":
-                            st.image(url, caption=f"{i+1}. {desc}")
-                        elif media_type == "video":
-                            st.video(url, format="video/mp4", start_time=0)
-                    script_text_out = generate_script_from_media_cohere(
-                        media_list, topic, lang="en", max_tokens=cohere_tokens, temperature=cohere_temp
-                    )
-                    final_text = script_text_out.strip()
-                elif script_mode == "AI-generated script (Cohere)":
-                    cohere_prompt = f"""Write a smooth, well-connected, short documentary script about "{topic}" in {num_media} sentences. Each sentence continues the previous, as if the viewer is following a story."""
-                    script_text_out = generate_script_with_cohere(cohere_prompt, max_tokens=cohere_tokens, temperature=cohere_temp)
-                    final_text = script_text_out.strip()
-                else:
-                    final_text = script_text.strip()
-                st.session_state["editable_script"] = final_text
-                st.session_state["media_list"] = media_list
-                st.session_state["last_num_media"] = num_media
-
-    if st.session_state.get("editable_script", ""):
-        st.markdown("### ✏️ Edit the script, then click Build Video:")
-        script_edit = st.text_area("Script (edit before building video):",
-                                   value=st.session_state["editable_script"], height=250, key="script_editbox")
-        if st.button("Build video / Rebuild after edit"):
-            temp_files = []
-            sentences = filter_script_sentences(script_edit, st.session_state["last_num_media"])
-            logo_path = None
-            if logo_file:
-                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_logo:
-                    image = Image.open(logo_file)
-                    image.save(tmp_logo.name)
-                    logo_path = tmp_logo.name
-                    temp_files.append(logo_path)
-            music_path = None
-            if music_file:
-                with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_music:
-                    music_file.seek(0)
-                    tmp_music.write(music_file.read())
-                    music_path = tmp_music.name
-                    temp_files.append(music_path)
-            montage = []
-            not_found_report = []
-            media_list = st.session_state["media_list"]
-            script_mode = script_mode if script_mode != "" else "AI-generated script (Cohere)"
-            if script_mode == "Script from media (Cohere)":
-                pair_count = min(len(sentences), len(media_list))
-                for idx in range(pair_count):
-                    sent = sentences[idx]
-                    media_type, media_url, media_desc = media_list[idx]
-                    if media_type == "image":
-                        img_path = safe_download_and_convert_image(media_url, temp_files)
-                        if img_path is None:
-                            not_found_report.append(f"Failed to download image: {media_url}")
-                            continue
-                        media_url_local = img_path
-                    else:
-                        media_url_local = media_url
-                    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_mp3:
-                        safe_tts_save(sent, tmp_mp3.name, voice_data["lang"], voice_data["tld"])
-                        mp3_path = tmp_mp3.name
-                        temp_files.append(mp3_path)
-                    montage.append((media_type, media_url_local, mp3_path, sent))
-            else:
-                for idx in range(min(len(sentences), st.session_state["last_num_media"])):
-                    sent = sentences[idx]
-                    pollinations_prompt = f"Highly detailed, cinematic, {sent.strip()}. Documentary style, professional, vibrant colors."
-                    found = False
-                    media_type = "image"
-                    media_url = None
-                    for src in sources_selected:
-                        if src == "Pexels":
-                            res = search_pexels_photos_with_desc(sent, per_page=1)
-                            if res:
-                                media_type, media_url, desc = res[0]
-                                found = True
-                                break
-                        if src == "Pixabay":
-                            res = search_pixabay_photos_with_desc(sent, per_page=1)
-                            if res:
-                                media_type, media_url, desc = res[0]
-                                found = True
-                                break
-                        if src == "Unsplash":
-                            res = search_unsplash_photos_with_desc(sent, per_page=1)
-                            if res:
-                                media_type, media_url, desc = res[0]
-                                found = True
-                                break
-                        if src == "Wikimedia":
-                            res = search_wikimedia_photos_with_desc(sent, limit=1)
-                            if res:
-                                media_type, media_url, desc = res[0]
-                                found = True
-                                break
-                        if src == "Pollinations":
-                            res = search_pollinations_photos_with_desc(pollinations_prompt, per_page=1)
-                            if res:
-                                media_type, media_url, desc = res[0]
-                                found = True
-                                break
-                    if found and media_type == "image":
-                        img_path = safe_download_and_convert_image(media_url, temp_files)
-                        if img_path is None:
-                            not_found_report.append(f"Failed to download image: {media_url}")
-                            continue
-                        media_url = img_path
-                    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_mp3:
-                        safe_tts_save(sent, tmp_mp3.name, voice_data["lang"], voice_data["tld"])
-                        mp3_path = tmp_mp3.name
-                        temp_files.append(mp3_path)
-                    montage.append((media_type, media_url, mp3_path, sent))
-            if not montage:
-                st.error("No valid scenes for the video.")
-                st.stop()
-            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_video:
-                out_video_path = tmp_video.name
-            final_video, video_duration_sec = assemble_video(
-                montage, out_path=out_video_path, color=color, text_size=text_size, text_pos=text_pos,
-                logo_path=logo_path, music_path=music_path, watermark_text=watermark,
-                gif_export=gif_export, square_export=square_export, youtube_export=youtube_export,
-                text_anim_mode=text_anim_mode_val, text_anim_group_size=text_anim_group_size, text_anim_lang=text_anim_lang
-            )
-            st.success("Done! See your result 👇")
-            st.video(final_video)
-            st.info(f"Video duration: {video_duration_sec/60:.2f} min ({video_duration_sec:.1f} sec)")
-            if not_found_report:
-                st.warning("Failed to find media for some scenes:")
-                st.markdown("\n".join(not_found_report))
-            with open(final_video, "rb") as f:
-                st.download_button(label="Download Video", data=f, file_name="documentary_video.mp4", mime="video/mp4")
-            for f in temp_files:
-                try:
-                    os.remove(f)
-                except Exception:
-                    pass
-
-# ======= اقتراحات مستقبلية =======
-# - عرض الصور للمستخدم قبل البناء النهائي للموافقة/التبديل
-# - إضافة تحريك الصور (Ken Burns Effect)
-# - حفظ تلقائي واستعادة المشاريع
-# - دعم تخصيص وصف Pollinations من المستخدم
-# - دعم مصادر فيديو AI أخرى عند توفر API
-# - إضافة تقارير تلقائية عن جودة الصورة/المشهد
+    except Exception as e:
+        st.error(f"حدث خطأ: {e}")
