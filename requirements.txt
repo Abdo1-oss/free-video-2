@@ -16,5 +16,4 @@ psutil
 arabic_reshaper
 python-bidi
 textblob
-opencv
 pyav
