@@ -13,7 +13,7 @@ from PIL import Image as PILImage
 
 st.set_page_config(page_title="منشئ فيديو الذكاء الاصطناعي", layout="wide")
 st.title("🎬 منشئ فيديو احترافي تلقائي بالذكاء الاصطناعي")
-st.markdown("أدخل عنوانًا فقط وسيتم إنشاء فيديو كامل تلقائيًا مع تعليق صوتي وصور مشاهد مناسبة وأصوات طبيعة مجانية.")
+st.markdown("أدخل عنوانًا فقط وسيتم إنشاء فيديو كامل تلقائيًا مع تعليق صوتي وصور مشاهد مناسبة.")
 
 video_title = st.text_input("🔹 أدخل عنوان الفيديو أو الكلمة المفتاحية", "")
 video_type = st.selectbox("🔸 نوع الفيديو", ["تحفيزي", "تعليمي", "وثائقي", "ديني", "تقني", "رياضي", "أخرى"])
@@ -142,23 +142,7 @@ def generate_voiceover(script):
     tts.save(out_path)
     return out_path
 
-def download_nature_sound():
-    nature_links = [
-        "https://assets.mixkit.co/sfx/preview/mixkit-forest-stream-water-1226.mp3",
-        "https://assets.mixkit.co/sfx/preview/mixkit-small-bird-in-the-forest-17.mp3",
-        "https://assets.mixkit.co/sfx/preview/mixkit-ocean-waves-ambience-1183.mp3",
-        "https://assets.mixkit.co/sfx/preview/mixkit-calm-water-small-river-1172.mp3",
-        "https://assets.mixkit.co/sfx/preview/mixkit-rain-loop-2395.mp3",
-    ]
-    url = nature_links[0]
-    local_path = "nature.mp3"
-    if not os.path.exists(local_path):
-        r = requests.get(url, stream=True, timeout=15)
-        with open(local_path, 'wb') as f:
-            shutil.copyfileobj(r.raw, f)
-    return local_path
-
-def create_video(scenes, images, voiceover_path, nature_path, quality, logo_file=None):
+def create_video(scenes, images, voiceover_path, quality, logo_file=None):
     clips = []
     duration_per_scene = max(4, int(15 / max(1, len(scenes))))
     for i, img_path in enumerate(images):
@@ -179,9 +163,7 @@ def create_video(scenes, images, voiceover_path, nature_path, quality, logo_file
 
     video = concatenate_videoclips(clips, method="compose")
     audio_voice = AudioFileClip(voiceover_path)
-    audio_nature = AudioFileClip(nature_path).volumex(0.22)
-    final_audio = CompositeAudioClip([audio_voice, audio_nature])
-    video = video.set_audio(final_audio)
+    video = video.set_audio(audio_voice)
 
     res_map = {"720p": (1280, 720), "1080p": (1920, 1080)}
     size = res_map.get(quality, (1280, 720))
@@ -199,7 +181,6 @@ def create_video(scenes, images, voiceover_path, nature_path, quality, logo_file
             .resize(height=90)
             .margin(right=10, top=10, opacity=0)
         )
-        video = video.set_audio(final_audio)
         video = concatenate_videoclips([video])
 
     out_path = "final_video.mp4"
@@ -236,7 +217,7 @@ if st.button("🚀 ابدأ"):
     if not video_title.strip():
         st.warning("الرجاء إدخال عنوان الفيديو.")
         st.stop()
-    for f in ["voiceover.mp3", "nature.mp3", "final_video.mp4", "video_with_intro_outro.mp4", "shorts.mp4"]:
+    for f in ["voiceover.mp3", "final_video.mp4", "video_with_intro_outro.mp4", "shorts.mp4"]:
         try:
             os.remove(f)
         except Exception:
@@ -249,14 +230,11 @@ if st.button("🚀 ابدأ"):
     images = get_images_for_scenes(scenes, video_type)
     st.info("جاري توليد التعليق الصوتي...")
     voiceover_path = generate_voiceover(script)
-    st.info("جاري تحميل صوت الطبيعة...")
-    nature_path = download_nature_sound()
     st.info("جاري إنشاء الفيديو...")
     video_path = create_video(
         scenes=scenes,
         images=images,
         voiceover_path=voiceover_path,
-        nature_path=nature_path,
         quality=video_quality,
         logo_file=add_logo,
     )
