@@ -9,21 +9,14 @@ from moviepy.editor import (
     ImageClip, AudioFileClip, concatenate_videoclips, CompositeAudioClip,
     TextClip, VideoFileClip
 )
-from PIL import Image
+from PIL import Image as PILImage
 
-# إعداد صفحة ستريملت
 st.set_page_config(page_title="منشئ فيديو الذكاء الاصطناعي", layout="wide")
 st.title("🎬 منشئ فيديو احترافي تلقائي بالذكاء الاصطناعي")
-st.markdown(
-    "أدخل عنوانًا فقط وسيتم إنشاء فيديو كامل تلقائيًا مع تعليق صوتي وصور مشاهد مناسبة وأصوات طبيعة مجانية."
-)
+st.markdown("أدخل عنوانًا فقط وسيتم إنشاء فيديو كامل تلقائيًا مع تعليق صوتي وصور مشاهد مناسبة وأصوات طبيعة مجانية.")
 
-# واجهة المستخدم
 video_title = st.text_input("🔹 أدخل عنوان الفيديو أو الكلمة المفتاحية", "")
-video_type = st.selectbox(
-    "🔸 نوع الفيديو",
-    ["تحفيزي", "تعليمي", "وثائقي", "ديني", "تقني", "رياضي", "أخرى"]
-)
+video_type = st.selectbox("🔸 نوع الفيديو", ["تحفيزي", "تعليمي", "وثائقي", "ديني", "تقني", "رياضي", "أخرى"])
 video_quality = st.selectbox("🔸 جودة الفيديو", ["720p", "1080p"])
 add_logo = st.file_uploader("لوغو القناة (اختياري)", type=["png", "jpg", "jpeg"])
 add_intro = st.checkbox("إضافة مقدمة تلقائية", value=True)
@@ -31,33 +24,21 @@ add_outro = st.checkbox("إضافة خاتمة تلقائية", value=True)
 shorts_mode = st.checkbox("توليد فيديو شورتس تلقائيًا")
 st.markdown("---")
 
-# وظائف الذكاء الاصطناعي والميديا
-
 def generate_script(title, video_type):
-    # استخدام Cohere لتوليد السكربت
-    api_key = os.getenv("K1GW0y2wWiwW7xlK7db7zZnqX7sxfRVGiWopVfCD", "")
+    api_key = os.getenv("COHERE_API_KEY", "")
     if not api_key:
-        # سكربت افتراضي إذا لم يتوفر مفتاح
         return (
             f"Welcome to our {video_type} video about {title}.\n"
             "Let's begin the journey...\n"
             "Thank you for watching!"
         )
-    prompt = (
-        f"Write a {video_type} video script in English based on the title: '{title}'. "
-        "Make it concise and divide it into clear scenes with newlines for each scene."
-    )
+    prompt = f"Write a {video_type} video script in English based on the title: '{title}'. Make it concise and divide it into clear scenes with newlines for each scene."
     try:
         import cohere
         co = cohere.Client(api_key)
-        response = co.generate(
-            model="command",
-            prompt=prompt,
-            max_tokens=700,
-            temperature=0.7,
-        )
+        response = co.generate(model="command", prompt=prompt, max_tokens=700, temperature=0.7)
         return response.generations[0].text.strip()
-    except Exception as e:
+    except Exception:
         return (
             f"Welcome to our {video_type} video about {title}.\n"
             "Let's begin the journey...\n"
@@ -93,7 +74,7 @@ def search_image_unsplash(query):
     return None
 
 def search_image_pexels(query):
-    api_key = os.getenv("pLcIoo3oNdhqna28AfdaBYhkE3SFps9oRGuOsxY3JTe92GcVDZpwZE9i", "")
+    api_key = os.getenv("PEXELS_API_KEY", "")
     if not api_key:
         return None
     headers = {"Authorization": api_key}
@@ -113,7 +94,7 @@ def search_image_pexels(query):
     return None
 
 def search_image_pixabay(query):
-    api_key = os.getenv("50380897-76243eaec536038f687ff8e15", "")
+    api_key = os.getenv("PIXABAY_API_KEY", "")
     if not api_key:
         return None
     url = f"https://pixabay.com/api/?key={api_key}&q={query}&image_type=photo"
@@ -132,7 +113,6 @@ def search_image_pixabay(query):
     return None
 
 def search_image(query):
-    # الأولوية: بيكسيلز > بيكسابي > Unsplash > صورة افتراضية
     img = search_image_pexels(query)
     if img:
         return img
@@ -142,7 +122,6 @@ def search_image(query):
     img = search_image_unsplash(query)
     if img:
         return img
-    # صورة افتراضية عند الفشل
     temp_path = tempfile.mktemp(suffix=".jpg")
     r = requests.get("https://placehold.co/1280x720?text=No+Image", stream=True)
     with open(temp_path, 'wb') as f:
@@ -164,7 +143,6 @@ def generate_voiceover(script):
     return out_path
 
 def download_nature_sound():
-    # أصوات طبيعة مجانية من Mixkit
     nature_links = [
         "https://assets.mixkit.co/sfx/preview/mixkit-forest-stream-water-1226.mp3",
         "https://assets.mixkit.co/sfx/preview/mixkit-small-bird-in-the-forest-17.mp3",
@@ -172,7 +150,7 @@ def download_nature_sound():
         "https://assets.mixkit.co/sfx/preview/mixkit-calm-water-small-river-1172.mp3",
         "https://assets.mixkit.co/sfx/preview/mixkit-rain-loop-2395.mp3",
     ]
-    url = nature_links[0]  # يمكنك التبديل عشوائيًا إذا رغبت
+    url = nature_links[0]
     local_path = "nature.mp3"
     if not os.path.exists(local_path):
         r = requests.get(url, stream=True, timeout=15)
@@ -183,22 +161,34 @@ def download_nature_sound():
 def create_video(scenes, images, voiceover_path, nature_path, quality, logo_file=None):
     clips = []
     duration_per_scene = max(4, int(15 / max(1, len(scenes))))
-    for img_path in images:
-        clip = ImageClip(img_path).set_duration(duration_per_scene)
-        clips.append(clip)
+    for i, img_path in enumerate(images):
+        if not os.path.exists(img_path):
+            print(f"⚠️ صورة غير موجودة: {img_path}")
+            continue
+        try:
+            with PILImage.open(img_path) as img:
+                img.verify()
+            clip = ImageClip(img_path).set_duration(duration_per_scene)
+            clips.append(clip)
+        except Exception as e:
+            print(f"❌ صورة غير صالحة أو معطوبة وتم تجاوزها: {img_path}, الخطأ: {e}")
+            continue
+
+    if not clips:
+        raise ValueError("❌ لم يتم العثور على صور صالحة لإنشاء الفيديو.")
+
     video = concatenate_videoclips(clips, method="compose")
-    # الصوت
     audio_voice = AudioFileClip(voiceover_path)
     audio_nature = AudioFileClip(nature_path).volumex(0.22)
     final_audio = CompositeAudioClip([audio_voice, audio_nature])
     video = video.set_audio(final_audio)
-    # جودة الفيديو
+
     res_map = {"720p": (1280, 720), "1080p": (1920, 1080)}
     size = res_map.get(quality, (1280, 720))
     video = video.resize(newsize=size)
-    # اللوجو
+
     if logo_file is not None:
-        logo_img = Image.open(logo_file).convert("RGBA")
+        logo_img = PILImage.open(logo_file).convert("RGBA")
         logo_img = logo_img.resize((110, 110))
         temp_logo_path = tempfile.mktemp(suffix=".png")
         logo_img.save(temp_logo_path)
@@ -211,6 +201,7 @@ def create_video(scenes, images, voiceover_path, nature_path, quality, logo_file
         )
         video = video.set_audio(final_audio)
         video = concatenate_videoclips([video])
+
     out_path = "final_video.mp4"
     video.write_videofile(out_path, fps=24, codec='libx264', audio_codec="aac", verbose=False, logger=None)
     return out_path
@@ -230,7 +221,6 @@ def create_shorts_version(video_path):
     w, h = clip.size
     target_h = 1280
     target_w = 720
-    # crop to center and resize to 9:16
     if w/h > 9/16:
         new_w = int(h * 9 / 16)
         x1 = (w - new_w) // 2
@@ -242,12 +232,10 @@ def create_shorts_version(video_path):
     shorts.write_videofile(out_path, fps=24, codec='libx264', audio_codec="aac", verbose=False, logger=None)
     return out_path
 
-# زر التشغيل
 if st.button("🚀 ابدأ"):
     if not video_title.strip():
         st.warning("الرجاء إدخال عنوان الفيديو.")
         st.stop()
-    # تنظيف الملفات المؤقتة
     for f in ["voiceover.mp3", "nature.mp3", "final_video.mp4", "video_with_intro_outro.mp4", "shorts.mp4"]:
         try:
             os.remove(f)
