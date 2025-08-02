@@ -26,7 +26,7 @@ PIXABAY_API_KEY = "50380897-76243eaec536038f687ff8e15"
 COHERE_API_KEY = "K1GW0y2wWiwW7xlK7db7zZnqX7sxfRVGiWopVfCD"
 
 # ضع مفتاح DeepAI الخاص بك هنا (سجّل مجاناً في https://deepai.org/)
-DEEPAI_API_KEY = "790f1607-c5ea-4f10-b116-59ceadd77c25"
+DEEPAI_API_KEY = "YOUR_DEEPAI_API_KEY"  # <--- ضع مفتاحك هنا
 
 GTTS_VOICES = [
     {"name": "English (US) - Female", "lang": "en", "tld": "com"},
@@ -463,9 +463,208 @@ def assemble_video(
             except Exception:
                 pass
 
-# باقي الكود (واجهة ستريملت، توزيع المشاهد، بناء الفيديو، عرض الصورة المصغرة ...) كما هو في سكريبتك الأصلي،
-# فقط عند عرض الصورة المصغرة استخدم الـ thumbnail_path الناتج من assemble_video:
-#    if thumbnail_path and os.path.exists(thumbnail_path):
-#        st.image(thumbnail_path, caption="Thumbnail (AI Generated)")
-#        with open(thumbnail_path, "rb") as fthumb:
-#            st.download_button("Download Thumbnail", data=fthumb, file_name="thumbnail.jpg", mime="image/jpeg")
+# ===== Streamlit App UI =====
+st.set_page_config(page_title="AI Documentary Generator", layout="wide")
+st.title("🎬 AI Documentary Generator (Images, Video, Voice-over)")
+
+mode = st.radio("Project Type", ["New Project", "Restore Project"])
+
+if mode == "Restore Project":
+    uploaded_project = st.file_uploader("Upload project file (json):", type="json")
+    if uploaded_project:
+        project_data = json.load(uploaded_project)
+        st.success("Project restored!")
+        st.json(project_data)
+else:
+    st.markdown("**Enter your topic, choose number of scenes, select media sources, and let AI create a documentary video!**")
+    topic = st.text_input("Video topic (e.g., Smart Cars)")
+    st.session_state["topic"] = topic
+    num_media = st.slider("Number of scenes:", min_value=2, max_value=30, value=5)
+    script_mode = st.radio(
+        "Script source:",
+        ["AI-generated script (Cohere)", "Script from media (Cohere)", "Write script manually"], index=0)
+    script_text = ""
+    cohere_tokens = st.slider("Approximate script length (tokens):", 100, 4000, 1000, step=50)
+    cohere_temp = st.slider("Creativity:", 0.1, 1.0, 0.4, step=0.05)
+    if script_mode == "Write script manually":
+        script_text = st.text_area("Write your documentary script here:", height=300)
+    sources_selected = st.multiselect(
+        "Photo/Video sources:",
+        options=["Pexels", "Unsplash", "Pixabay", "Wikimedia"],
+        default=["Pexels", "Unsplash", "Pixabay", "Wikimedia"]
+    )
+    logo_file = st.file_uploader("Logo (optional):", type=["png", "jpg", "jpeg"])
+    music_file = st.file_uploader("Background music (optional):", type=["mp3", "wav"])
+    youtube_export = st.checkbox("YouTube export (16:9)", value=True)
+    vertical_export = st.checkbox("Vertical export (9:16 Reels/TikTok)", value=False)
+    watermark = st.text_input("Watermark text (optional):", value="@SuperAI")
+    color = st.color_picker("Text color", "#ffffff")
+    text_size = st.slider("Text size", 14, 60, 28)
+    text_pos = st.radio("Text position", options=["top", "center", "bottom"], index=2)
+    gif_export = st.checkbox("Export as GIF", value=False)
+    square_export = st.checkbox("Export square video (Instagram)", value=False)
+    voice_choice = st.selectbox("Voice-over voice:", [v["name"] for v in GTTS_VOICES])
+    voice_data = next(v for v in GTTS_VOICES if v["name"] == voice_choice)
+    text_anim_mode_val = "sentence"
+    text_anim_group_size = 1
+    text_anim_lang = voice_data["lang"]
+
+    if "editable_script" not in st.session_state:
+        st.session_state["editable_script"] = ""
+    if "media_list" not in st.session_state:
+        st.session_state["media_list"] = []
+    if "last_num_media" not in st.session_state:
+        st.session_state["last_num_media"] = 0
+    if "scene_order" not in st.session_state:
+        st.session_state["scene_order"] = list(range(num_media))
+
+    if st.button("Generate!"):
+        progress_bar = st.progress(0, text="Starting ...")
+        if script_mode == "Write script manually" and not script_text.strip():
+            st.error("Please enter the script text.")
+        elif script_mode != "Write script manually" and not topic.strip():
+            st.error("Please enter a topic.")
+        elif not COHERE_API_KEY:
+            st.error("Cohere API key not found!")
+        else:
+            with st.spinner("Generating ..."):
+                progress_bar.progress(5, text="Generating script ...")
+                media_list = []
+                if script_mode == "Script from media (Cohere)":
+                    all_media = []
+                    n_each = max(1, num_media // (2 * len(sources_selected)))
+                    videos, photos = [], []
+                    for src in sources_selected:
+                        if src == "Pexels":
+                            videos += search_pexels_videos_with_desc(topic, per_page=n_each)
+                            photos += search_pexels_photos_with_desc(topic, per_page=n_each)
+                        if src == "Pixabay":
+                            videos += search_pixabay_videos_with_desc(topic, per_page=n_each)
+                            photos += search_pixabay_photos_with_desc(topic, per_page=n_each)
+                        if src == "Unsplash":
+                            photos += search_unsplash_photos_with_desc(topic, per_page=n_each*2)
+                        if src == "Wikimedia":
+                            photos += search_wikimedia_photos_with_desc(topic, limit=n_each*2)
+                    total_media = videos[:num_media] + photos[:max(0, num_media-len(videos))]
+                    media_list = total_media[:num_media]
+                    if not media_list:
+                        st.error("Not enough media found. Try reducing the number or enabling more sources.")
+                        st.stop()
+                    for i, (media_type, url, desc) in enumerate(media_list):
+                        if media_type == "image":
+                            st.image(url, caption=f"{i+1}. {desc}")
+                        elif media_type == "video":
+                            st.video(url, format="video/mp4", start_time=0)
+                    script_text_out = generate_script_from_media_cohere(
+                        media_list, topic, lang=voice_data["lang"], max_tokens=cohere_tokens, temperature=cohere_temp
+                    )
+                    final_text = script_text_out.strip()
+                elif script_mode == "AI-generated script (Cohere)":
+                    cohere_prompt = f"""Write a smooth, well-connected, short documentary script about "{topic}" in {num_media} sentences. Each sentence continues the previous, as if the viewer is following a story."""
+                    script_text_out = generate_script_with_cohere(cohere_prompt, max_tokens=cohere_tokens, temperature=cohere_temp)
+                    final_text = script_text_out.strip()
+                else:
+                    final_text = script_text.strip()
+                st.session_state["editable_script"] = final_text
+                st.session_state["media_list"] = media_list
+                st.session_state["last_num_media"] = num_media
+                st.session_state["scene_order"] = list(range(num_media))
+
+    if st.session_state.get("editable_script", ""):
+        st.markdown("### ✏️ Edit the script, then click Build Video:")
+        script_edit = st.text_area("Script (edit before building video):",
+                                   value=st.session_state["editable_script"], height=250, key="script_editbox")
+        st.markdown("#### 📸 Scene order (drag to reorder):")
+        media_list = st.session_state["media_list"]
+        scene_order = st.session_state.get("scene_order", list(range(len(media_list))))
+        for idx, scene_idx in enumerate(scene_order):
+            c1, c2, c3 = st.columns([7,1,1])
+            with c1:
+                m = media_list[scene_idx]
+                if m[0] == "image":
+                    st.image(m[1], caption=f"{idx+1}. {m[2]}")
+                else:
+                    st.video(m[1], format="video/mp4", start_time=0)
+            with c2:
+                if idx > 0:
+                    if st.button("⬆️", key=f"up{idx}"):
+                        scene_order[idx-1], scene_order[idx] = scene_order[idx], scene_order[idx-1]
+                        st.session_state["scene_order"] = scene_order
+                        st.experimental_rerun()
+            with c3:
+                if idx < len(scene_order)-1:
+                    if st.button("⬇️", key=f"down{idx}"):
+                        scene_order[idx+1], scene_order[idx] = scene_order[idx], scene_order[idx+1]
+                        st.session_state["scene_order"] = scene_order
+                        st.experimental_rerun()
+        if st.button("Build video / Rebuild after edit"):
+            temp_files = []
+            try:
+                sentences = filter_script_sentences(script_edit, st.session_state["last_num_media"])
+                logo_path = None
+                if logo_file:
+                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_logo:
+                        image = Image.open(logo_file)
+                        image.save(tmp_logo.name)
+                        logo_path = tmp_logo.name
+                        temp_files.append(logo_path)
+                music_path = None
+                if music_file:
+                    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_music:
+                        music_file.seek(0)
+                        tmp_music.write(music_file.read())
+                        music_path = tmp_music.name
+                        temp_files.append(music_path)
+                montage = []
+                not_found_report = []
+                ordered_media_list = [media_list[i] for i in st.session_state["scene_order"]]
+                script_mode_cur = script_mode if script_mode != "" else "AI-generated script (Cohere)"
+                for idx in range(min(len(sentences), len(ordered_media_list))):
+                    sent = sentences[idx]
+                    media_type, media_url, media_desc = ordered_media_list[idx]
+                    cur_srcs = sources_selected
+                    if media_type == "image":
+                        img_path = safe_download_and_convert_image(media_url, temp_files)
+                        if img_path is None:
+                            alt = get_media_alternative(sent, exclude_sources=[], per_page=1)
+                            img_path = safe_download_and_convert_image(alt[1], temp_files)
+                            if img_path is None:
+                                not_found_report.append(f"Failed to download image: {media_url}")
+                                img_path = safe_download_and_convert_image(DEFAULT_PLACEHOLDER_IMG, temp_files)
+                        media_url_local = img_path
+                    else:
+                        media_url_local = media_url
+                    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_mp3:
+                        safe_tts_save(sent, tmp_mp3.name, voice_data["lang"], voice_data["tld"])
+                        mp3_path = tmp_mp3.name
+                        temp_files.append(mp3_path)
+                    montage.append((media_type, media_url_local, mp3_path, sent))
+                if not montage:
+                    st.error("No valid scenes for the video.")
+                    st.stop()
+
+                with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_video:
+                    out_video_path = tmp_video.name
+                final_video, video_duration_sec, thumbnail_path = assemble_video(
+                    montage, out_path=out_video_path, color=color, text_size=text_size, text_pos=text_pos,
+                    logo_path=logo_path, music_path=music_path, watermark_text=watermark,
+                    gif_export=gif_export, square_export=square_export, youtube_export=youtube_export,
+                    vertical_export=vertical_export,
+                    text_anim_mode=text_anim_mode_val, text_anim_group_size=text_anim_group_size, text_anim_lang=text_anim_lang
+                )
+                st.success("Done! See your result 👇")
+                st.video(final_video)
+                st.info(f"Video duration: {video_duration_sec/60:.2f} min ({video_duration_sec:.1f} sec)")
+                if thumbnail_path and os.path.exists(thumbnail_path):
+                    st.image(thumbnail_path, caption="Thumbnail (AI Generated)")
+                    with open(thumbnail_path, "rb") as fthumb:
+                        st.download_button("Download Thumbnail", data=fthumb, file_name="thumbnail.jpg", mime="image/jpeg")
+                if not_found_report:
+                    st.warning("Failed to find media for some scenes:")
+                    st.markdown("\n".join(not_found_report))
+                with open(final_video, "rb") as f:
+                    st.download_button(label="Download Video", data=f, file_name="documentary_video.mp4", mime="video/mp4")
+            finally:
+                for f in temp_files:
+                    try: os.remove(f)
+                    except: pass
