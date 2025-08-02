@@ -1,0 +1,3 @@
+imagemagick
+fonts-dejavu
+fonts-liberation
