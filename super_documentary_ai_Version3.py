@@ -5,7 +5,7 @@ import os
 import json
 import numpy as np
 from moviepy.editor import concatenate_videoclips, ImageClip, CompositeVideoClip, AudioFileClip, TextClip, concatenate_audioclips, VideoFileClip
-from PIL import Image 
+from PIL import Image
 import io
 from gtts import gTTS
 import nltk
@@ -13,7 +13,6 @@ import re
 import random
 import wave
 import struct
-import shutil
 
 try:
     nltk.data.find('tokenizers/punkt')
@@ -24,7 +23,6 @@ PEXELS_API_KEY = "pLcIoo3oNdhqna28AfdaBYhkE3SFps9oRGuOsxY3JTe92GcVDZpwZE9i"
 UNSPLASH_ACCESS_KEY = "SDK5avSHNm9lcNhhLhT_SzUdzd98hYX0BVjswi3ZHzU"
 PIXABAY_API_KEY = "50380897-76243eaec536038f687ff8e15"
 COHERE_API_KEY = "K1GW0y2wWiwW7xlK7db7zZnqX7sxfRVGiWopVfCD"
-DEEPAI_API_KEY = "790f1607-c5ea-4f10-b116-59ceadd77c25"
 
 GTTS_VOICES = [
     {"name": "English (US) - Female", "lang": "en", "tld": "com"},
@@ -33,33 +31,6 @@ GTTS_VOICES = [
     {"name": "Spanish (Spain) - Female", "lang": "es", "tld": "es"},
     {"name": "German (Germany) - Female", "lang": "de", "tld": "de"},
 ]
-
-DEFAULT_PLACEHOLDER_IMG = "https://upload.wikimedia.org/wikipedia/commons/6/65/No-Image-Placeholder.svg"
-
-def generate_thumbnail_image(prompt, temp_files):
-    if not DEEPAI_API_KEY or DEEPAI_API_KEY == "YOUR_DEEPAI_API_KEY":
-        print("DeepAI API key missing, cannot generate thumbnail.")
-        return None
-    url = "https://api.deepai.org/api/text2img"
-    try:
-        response = requests.post(
-            url,
-            data={'text': prompt},
-            headers={'api-key': DEEPAI_API_KEY}
-        )
-        data = response.json()
-        img_url = data.get("output_url")
-        if img_url:
-            img_data = requests.get(img_url).content
-            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_img:
-                tmp_img.write(img_data)
-                temp_files.append(tmp_img.name)
-                return tmp_img.name
-        else:
-            print("DeepAI response missing output_url:", data)
-    except Exception as e:
-        print(f"DeepAI thumbnail error: {e}")
-    return None
 
 def safe_download_and_convert_image(media_url, temp_files):
     try:
@@ -75,25 +46,6 @@ def safe_download_and_convert_image(media_url, temp_files):
     except Exception as e:
         print(f"Failed to process image: {media_url}, error: {e}")
         return None
-
-def get_media_alternative(query, exclude_sources=[], per_page=1):
-    sources = ["Pexels", "Pixabay", "Unsplash", "Wikimedia"]
-    for src in sources:
-        if src in exclude_sources:
-            continue
-        if src == "Pexels":
-            res = search_pexels_photos_with_desc(query, per_page=1)
-            if res: return res[0]
-        if src == "Pixabay":
-            res = search_pixabay_photos_with_desc(query, per_page=1)
-            if res: return res[0]
-        if src == "Unsplash":
-            res = search_unsplash_photos_with_desc(query, per_page=1)
-            if res: return res[0]
-        if src == "Wikimedia":
-            res = search_wikimedia_photos_with_desc(query, limit=1)
-            if res: return res[0]
-    return ("image", DEFAULT_PLACEHOLDER_IMG, "No image found")
 
 def search_pexels_photos_with_desc(query, per_page=1):
     if not PEXELS_API_KEY: return []
@@ -155,8 +107,7 @@ def search_wikimedia_photos_with_desc(query, limit=1):
     url = f"https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch={query}&gsrlimit={limit}&prop=imageinfo|description&iiprop=url&format=json"
     try:
         response = requests.get(url, timeout=10)
-        data = response.json()
-        pages = data.get("query", {}).get("pages", {})
+        pages = response.json().get("query", {}).get("pages", {})
         result = []
         for v in pages.values():
             img_url = v.get("imageinfo", [{}])[0].get("url")
@@ -194,8 +145,6 @@ def generate_script_from_media_cohere(media_list, topic, lang="en", max_tokens=1
     prompt += f"""
 Write a short, smooth, documentary script (one story, not disconnected sentences) that covers these photos and videos in order, without mentioning the word "photo", "scene", or numbers, and no repetition.
 """
-    if lang != "en":
-        prompt += f"\nWrite the script in {lang}."
     return generate_script_with_cohere(prompt, max_tokens=max_tokens, temperature=temperature)
 
 def filter_script_sentences(raw_text, num_media):
@@ -260,14 +209,6 @@ def resize_and_letterbox(img_clip, target_w=1280, target_h=720):
         img_clip = img_clip.margin(left=(target_w-img_clip.w)//2, right=(target_w-img_clip.w)//2, color=(0,0,0))
     return img_clip
 
-def resize_to_vertical(img_clip, target_w=720, target_h=1280):
-    img_clip = img_clip.resize(height=target_h)
-    if img_clip.w > target_w:
-        img_clip = img_clip.crop(x_center=img_clip.w/2, width=target_w)
-    elif img_clip.w < target_w:
-        img_clip = img_clip.margin(left=(target_w-img_clip.w)//2, right=(target_w-img_clip.w)//2, color=(0,0,0))
-    return img_clip
-
 def random_watermark_positions(duration, w, h, txt_w=200, txt_h=30, step=0.5):
     positions = []
     t = 0
@@ -308,74 +249,29 @@ def safe_tts_save(text, mp3_path, lang, tld):
 def assemble_video(
     montage, out_path, color="#FFFFFF", text_size=32, text_pos="bottom",
     logo_path=None, music_path=None, watermark_text="", gif_export=False, square_export=False, youtube_export=False,
-    vertical_export=False,
     text_anim_mode="sentence", text_anim_group_size=1, text_anim_lang="en"
 ):
     clips = []
     audio_clips = []
     temp_files = []
-    thumbnail_path = None
-    try:
-        if not thumbnail_path:
-            topic = st.session_state.get('topic', 'my topic')
-            thumbnail_prompt = f"cinematic, colorful thumbnail for a documentary about {topic}, trending YouTube style"
-            thumbnail_path = generate_thumbnail_image(thumbnail_prompt, temp_files)
-        for idx, (media_type, media_url, audio_path, sent) in enumerate(montage):
-            duration = get_audio_duration(audio_path)
-            audio_clip = AudioFileClip(audio_path)
-            audio_clips.append(audio_clip)
-            if media_type == "video":
-                try:
-                    clip = VideoFileClip(media_url)
-                    if clip.duration > duration:
-                        clip = clip.subclip(0, duration)
-                    else:
-                        clip = clip.set_duration(duration)
-                    if vertical_export:
-                        clip = resize_to_vertical(clip, target_w=720, target_h=1280)
-                    else:
-                        clip = clip.resize(height=720)
-                        if clip.w > 1280:
-                            clip = clip.crop(x_center=clip.w/2, width=1280)
-                        elif clip.w < 1280:
-                            clip = clip.margin(left=(1280-clip.w)//2, right=(1280-clip.w)//2, color=(0,0,0))
-                    anim_txt = animated_text_clip(
-                        clip.set_duration(duration),
-                        sent,
-                        duration,
-                        lang=text_anim_lang,
-                        mode=text_anim_mode,
-                        group_size=text_anim_group_size,
-                        font_size=text_size,
-                        color=color,
-                        text_pos=text_pos
-                    )
-                    clips.append(anim_txt)
-                    if idx == 0 and not thumbnail_path:
-                        thumb_img = clip.get_frame(0)
-                        thumb_pil = Image.fromarray(thumb_img)
-                        thumb_temp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
-                        thumb_pil.save(thumb_temp.name)
-                        thumbnail_path = thumb_temp.name
-                        temp_files.append(thumbnail_path)
-                except Exception as e:
-                    print(f"Video error: {e}, fallback to image")
-                    media_type = "image"
-            if media_type == "image":
-                img_path = media_url
-                if isinstance(img_path, str) and img_path.startswith("http"):
-                    img_path = safe_download_and_convert_image(img_path, temp_files)
-                    if img_path is None:
-                        continue
-                if vertical_export:
-                    img_clip = ImageClip(img_path)
-                    img_clip = resize_to_vertical(img_clip, target_w=720, target_h=1280)
+    for media_type, media_url, audio_path, sent in montage:
+        duration = get_audio_duration(audio_path)
+        audio_clip = AudioFileClip(audio_path)
+        audio_clips.append(audio_clip)
+        if media_type == "video":
+            try:
+                clip = VideoFileClip(media_url)
+                if clip.duration > duration:
+                    clip = clip.subclip(0, duration)
                 else:
-                    img_clip = ImageClip(img_path)
-                    img_clip = resize_and_letterbox(img_clip, target_w=1280, target_h=720)
-                img_clip = img_clip.set_duration(duration)
+                    clip = clip.set_duration(duration)
+                clip = clip.resize(height=720)
+                if clip.w > 1280:
+                    clip = clip.crop(x_center=clip.w/2, width=1280)
+                elif clip.w < 1280:
+                    clip = clip.margin(left=(1280-clip.w)//2, right=(1280-clip.w)//2, color=(0,0,0))
                 anim_txt = animated_text_clip(
-                    img_clip,
+                    clip.set_duration(duration),
                     sent,
                     duration,
                     lang=text_anim_lang,
@@ -386,74 +282,85 @@ def assemble_video(
                     text_pos=text_pos
                 )
                 clips.append(anim_txt)
-                if idx == 0 and not thumbnail_path:
-                    thumb_pil = Image.open(img_path)
-                    thumb_temp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
-                    thumb_pil.save(thumb_temp.name)
-                    thumbnail_path = thumb_temp.name
-                    temp_files.append(thumbnail_path)
-        if not clips or not audio_clips:
-            st.error("Could not build the final video.")
-            return None, None, None
-        final_audio = concatenate_audioclips(audio_clips)
-        final_clip = concatenate_videoclips(clips, method="compose")
-        final_clip = final_clip.set_audio(final_audio)
-        final_clip = final_clip.subclip(0, final_audio.duration)
-        if youtube_export:
-            final_clip = final_clip.resize(height=720)
-            if final_clip.w != 1280:
-                final_clip = final_clip.crop(x_center=final_clip.w/2, width=1280, height=720)
-        if vertical_export:
-            final_clip = final_clip.resize(height=1280)
-            if final_clip.w != 720:
-                final_clip = final_clip.crop(x_center=final_clip.w/2, width=720, height=1280)
-        if logo_path:
-            logo = (ImageClip(logo_path)
-                    .set_duration(final_clip.duration)
-                    .resize(height=50)
-                    .set_pos(("right", "top")).margin(right=8, top=8, opacity=0))
-            final_clip = CompositeVideoClip([final_clip, logo])
-        if not music_path or not os.path.exists(music_path):
-            music_path_auto = choose_music_for_topic(st.session_state.get("topic","") if "topic" in st.session_state else "")
-            if os.path.exists(music_path_auto):
-                music_path = music_path_auto
-        if music_path and os.path.exists(music_path):
-            try:
-                music_clip = AudioFileClip(music_path).volumex(0.15)
-                final_audio = concatenate_audioclips([final_clip.audio, music_clip])
-                final_clip = final_clip.set_audio(final_audio)
             except Exception as e:
-                print(f"Music error: {e}")
-        if watermark_text:
-            try:
-                txt_clip = TextClip(
-                    watermark_text, fontsize=24, color='white', font='Arial-Bold',
-                    size=(200, 30)
-                ).set_duration(final_clip.duration).set_opacity(0.4)
-                positions = random_watermark_positions(final_clip.duration, final_clip.w, final_clip.h, 200, 30, step=0.5)
-                def moving_position(t):
-                    idx = int(t // 0.5)
-                    return positions[idx][1] if idx < len(positions) else positions[-1][1]
-                txt_clip = txt_clip.set_position(moving_position)
-                final_clip = CompositeVideoClip([final_clip, txt_clip])
-            except Exception as e:
-                print(f"Watermark error: {e}")
-        final_clip = final_clip.fadein(1).fadeout(1)
-        final_clip.write_videofile(out_path, codec="libx264", audio_codec="aac", preset="ultrafast", threads=4, fps=15)
-        for c in clips:
-            try: c.close()
-            except: pass
-        for a in audio_clips:
-            try: a.close()
-            except: pass
-        final_clip.close()
-        return out_path, final_audio.duration, thumbnail_path
-    finally:
-        for f in temp_files:
-            try:
-                os.remove(f)
-            except Exception:
-                pass
+                print(f"Video error: {e}, fallback to image")
+                media_type = "image"
+        if media_type == "image":
+            img_path = media_url
+            if isinstance(img_path, str) and img_path.startswith("http"):
+                img_path = safe_download_and_convert_image(img_path, temp_files)
+                if img_path is None:
+                    continue  # تخطى الصورة التالفة
+            img_clip = ImageClip(img_path)
+            img_clip = resize_and_letterbox(img_clip, target_w=1280, target_h=720)
+            img_clip = img_clip.set_duration(duration)
+            anim_txt = animated_text_clip(
+                img_clip,
+                sent,
+                duration,
+                lang=text_anim_lang,
+                mode=text_anim_mode,
+                group_size=text_anim_group_size,
+                font_size=text_size,
+                color=color,
+                text_pos=text_pos
+            )
+            clips.append(anim_txt)
+    if not clips or not audio_clips:
+        st.error("Could not build the final video.")
+        return None, None
+    final_audio = concatenate_audioclips(audio_clips)
+    final_clip = concatenate_videoclips(clips, method="compose")
+    final_clip = final_clip.set_audio(final_audio)
+    final_clip = final_clip.subclip(0, final_audio.duration)
+    if youtube_export:
+        final_clip = final_clip.resize(height=720)
+        if final_clip.w != 1280:
+            final_clip = final_clip.crop(x_center=final_clip.w/2, width=1280, height=720)
+    if logo_path:
+        logo = (ImageClip(logo_path)
+                .set_duration(final_clip.duration)
+                .resize(height=50)
+                .set_pos(("right", "top")).margin(right=8, top=8, opacity=0))
+        final_clip = CompositeVideoClip([final_clip, logo])
+    if not music_path or not os.path.exists(music_path):
+        music_path_auto = choose_music_for_topic(st.session_state.get("topic","") if "topic" in st.session_state else "")
+        if os.path.exists(music_path_auto):
+            music_path = music_path_auto
+    if music_path and os.path.exists(music_path):
+        try:
+            music_clip = AudioFileClip(music_path).volumex(0.15)
+            final_audio = concatenate_audioclips([final_clip.audio, music_clip])
+            final_clip = final_clip.set_audio(final_audio)
+        except Exception as e:
+            print(f"Music error: {e}")
+    if watermark_text:
+        try:
+            txt_clip = TextClip(
+                watermark_text, fontsize=24, color='white', font='Arial-Bold',
+                size=(200, 30)
+            ).set_duration(final_clip.duration).set_opacity(0.4)
+            positions = random_watermark_positions(final_clip.duration, final_clip.w, final_clip.h, 200, 30, step=0.5)
+            def moving_position(t):
+                idx = int(t // 0.5)
+                return positions[idx][1] if idx < len(positions) else positions[-1][1]
+            txt_clip = txt_clip.set_position(moving_position)
+            final_clip = CompositeVideoClip([final_clip, txt_clip])
+        except Exception as e:
+            print(f"Watermark error: {e}")
+    final_clip = final_clip.fadein(1).fadeout(1)
+    final_clip.write_videofile(out_path, codec="libx264", audio_codec="aac", preset="ultrafast", threads=4, fps=15)
+    for c in clips:
+        c.close()
+    for a in audio_clips:
+        a.close()
+    final_clip.close()
+    for f in temp_files:
+        try:
+            os.remove(f)
+        except Exception:
+            pass
+    return out_path, final_audio.duration
 
 # ===== Streamlit App UI =====
 st.set_page_config(page_title="AI Documentary Generator", layout="wide")
@@ -488,7 +395,6 @@ else:
     logo_file = st.file_uploader("Logo (optional):", type=["png", "jpg", "jpeg"])
     music_file = st.file_uploader("Background music (optional):", type=["mp3", "wav"])
     youtube_export = st.checkbox("YouTube export (16:9)", value=True)
-    vertical_export = st.checkbox("Vertical export (9:16 Reels/TikTok)", value=False)
     watermark = st.text_input("Watermark text (optional):", value="@SuperAI")
     color = st.color_picker("Text color", "#ffffff")
     text_size = st.slider("Text size", 14, 60, 28)
@@ -507,8 +413,6 @@ else:
         st.session_state["media_list"] = []
     if "last_num_media" not in st.session_state:
         st.session_state["last_num_media"] = 0
-    if "scene_order" not in st.session_state:
-        st.session_state["scene_order"] = list(range(num_media))
 
     if st.button("Generate!"):
         progress_bar = st.progress(0, text="Starting ...")
@@ -525,32 +429,45 @@ else:
                 if script_mode == "Script from media (Cohere)":
                     all_media = []
                     n_each = max(1, num_media // (2 * len(sources_selected)))
-                    videos, photos = [], []
                     for src in sources_selected:
                         if src == "Pexels":
-                            videos += search_pexels_videos_with_desc(topic, per_page=n_each)
-                            photos += search_pexels_photos_with_desc(topic, per_page=n_each)
-                        if src == "Pixabay":
-                            videos += search_pixabay_videos_with_desc(topic, per_page=n_each)
-                            photos += search_pixabay_photos_with_desc(topic, per_page=n_each)
+                            all_media += search_pexels_photos_with_desc(topic, per_page=n_each)
+                            all_media += search_pexels_videos_with_desc(topic, per_page=n_each)
                         if src == "Unsplash":
-                            photos += search_unsplash_photos_with_desc(topic, per_page=n_each*2)
+                            all_media += search_unsplash_photos_with_desc(topic, per_page=n_each*2)
+                        if src == "Pixabay":
+                            all_media += search_pixabay_photos_with_desc(topic, per_page=n_each)
+                            all_media += search_pixabay_videos_with_desc(topic, per_page=n_each)
                         if src == "Wikimedia":
-                            photos += search_wikimedia_photos_with_desc(topic, limit=n_each*2)
-                    total_media = videos[:num_media] + photos[:max(0, num_media-len(videos))]
-                    media_list = total_media[:num_media]
-                    if not media_list or len(media_list) == 0:
-                        st.warning("لم يتم العثور على صور أو فيديوهات لهذا الموضوع. جرب كتابة الموضوع بالإنجليزية أو اختر موضوعًا شائعًا.")
-                        media_list = [("image", DEFAULT_PLACEHOLDER_IMG, "Placeholder Image") for _ in range(num_media)]
-                    st.session_state["media_list"] = media_list
-                    st.session_state["scene_order"] = list(range(len(media_list)))
+                            all_media += search_wikimedia_photos_with_desc(topic, limit=n_each*2)
+                    photos = [m for m in all_media if m[0] == "image"]
+                    videos = [m for m in all_media if m[0] == "video"]
+                    media_list = []
+                    i = j = 0
+                    for k in range(num_media):
+                        if k % 2 == 0 and i < len(photos):
+                            media_list.append(photos[i])
+                            i += 1
+                        elif j < len(videos):
+                            media_list.append(videos[j])
+                            j += 1
+                        elif i < len(photos):
+                            media_list.append(photos[i])
+                            i += 1
+                        elif j < len(videos):
+                            media_list.append(videos[j])
+                            j += 1
+                    media_list = media_list[:num_media]
+                    if not media_list:
+                        st.error("Not enough media found. Try reducing the number or enabling more sources.")
+                        st.stop()
                     for i, (media_type, url, desc) in enumerate(media_list):
                         if media_type == "image":
                             st.image(url, caption=f"{i+1}. {desc}")
                         elif media_type == "video":
                             st.video(url, format="video/mp4", start_time=0)
                     script_text_out = generate_script_from_media_cohere(
-                        media_list, topic, lang=voice_data["lang"], max_tokens=cohere_tokens, temperature=cohere_temp
+                        media_list, topic, lang="en", max_tokens=cohere_tokens, temperature=cohere_temp
                     )
                     final_text = script_text_out.strip()
                 elif script_mode == "AI-generated script (Cohere)":
@@ -560,83 +477,44 @@ else:
                 else:
                     final_text = script_text.strip()
                 st.session_state["editable_script"] = final_text
+                st.session_state["media_list"] = media_list
                 st.session_state["last_num_media"] = num_media
-                st.session_state["scene_order"] = list(range(len(st.session_state["media_list"])))
 
     if st.session_state.get("editable_script", ""):
         st.markdown("### ✏️ Edit the script, then click Build Video:")
         script_edit = st.text_area("Script (edit before building video):",
                                    value=st.session_state["editable_script"], height=250, key="script_editbox")
-        st.markdown("#### 📸 Scene order (drag to reorder):")
-        media_list = st.session_state["media_list"]
-        scene_order = st.session_state.get("scene_order", list(range(len(media_list))))
-        if len(scene_order) != len(media_list):
-            scene_order = list(range(len(media_list)))
-            st.session_state["scene_order"] = scene_order
-        if not media_list or len(media_list) == 0:
-            st.warning("No media found. Using default images for testing.")
-            media_list = [("image", DEFAULT_PLACEHOLDER_IMG, "Placeholder Image") for _ in range(st.session_state.get("last_num_media", 5))]
-            st.session_state["media_list"] = media_list
-            scene_order = list(range(len(media_list)))
-            st.session_state["scene_order"] = scene_order
-        for idx, scene_idx in enumerate(scene_order):
-            if scene_idx >= len(media_list):
-                continue
-            c1, c2, c3 = st.columns([7,1,1])
-            with c1:
-                m = media_list[scene_idx]
-                if m[0] == "image":
-                    st.image(m[1], caption=f"{idx+1}. {m[2]}")
-                elif m[0] == "video":
-                    st.video(m[1], format="video/mp4", start_time=0)
-                else:
-                    st.warning("Unsupported media type.")
-            with c2:
-                if idx > 0:
-                    if st.button("⬆️", key=f"up{idx}"):
-                        scene_order[idx-1], scene_order[idx] = scene_order[idx], scene_order[idx-1]
-                        st.session_state["scene_order"] = scene_order
-                        st.rerun()
-            with c3:
-                if idx < len(scene_order)-1:
-                    if st.button("⬇️", key=f"down{idx}"):
-                        scene_order[idx+1], scene_order[idx] = scene_order[idx], scene_order[idx+1]
-                        st.session_state["scene_order"] = scene_order
-                        st.rerun()
         if st.button("Build video / Rebuild after edit"):
             temp_files = []
-            try:
-                sentences = filter_script_sentences(script_edit, st.session_state["last_num_media"])
-                logo_path = None
-                if logo_file:
-                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_logo:
-                        image = Image.open(logo_file)
-                        image.save(tmp_logo.name)
-                        logo_path = tmp_logo.name
-                        temp_files.append(logo_path)
-                music_path = None
-                if music_file:
-                    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_music:
-                        music_file.seek(0)
-                        tmp_music.write(music_file.read())
-                        music_path = tmp_music.name
-                        temp_files.append(music_path)
-                montage = []
-                not_found_report = []
-                ordered_media_list = [media_list[i] for i in st.session_state["scene_order"] if i < len(media_list)]
-                script_mode_cur = script_mode if script_mode != "" else "AI-generated script (Cohere)"
-                for idx in range(min(len(sentences), len(ordered_media_list))):
+            sentences = filter_script_sentences(script_edit, st.session_state["last_num_media"])
+            logo_path = None
+            if logo_file:
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_logo:
+                    image = Image.open(logo_file)
+                    image.save(tmp_logo.name)
+                    logo_path = tmp_logo.name
+                    temp_files.append(logo_path)
+            music_path = None
+            if music_file:
+                with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_music:
+                    music_file.seek(0)
+                    tmp_music.write(music_file.read())
+                    music_path = tmp_music.name
+                    temp_files.append(music_path)
+            montage = []
+            not_found_report = []
+            media_list = st.session_state["media_list"]
+            script_mode = script_mode if script_mode != "" else "AI-generated script (Cohere)"
+            if script_mode == "Script from media (Cohere)":
+                pair_count = min(len(sentences), len(media_list))
+                for idx in range(pair_count):
                     sent = sentences[idx]
-                    media_type, media_url, media_desc = ordered_media_list[idx]
-                    cur_srcs = sources_selected
+                    media_type, media_url, media_desc = media_list[idx]
                     if media_type == "image":
                         img_path = safe_download_and_convert_image(media_url, temp_files)
                         if img_path is None:
-                            alt = get_media_alternative(sent, exclude_sources=[], per_page=1)
-                            img_path = safe_download_and_convert_image(alt[1], temp_files)
-                            if img_path is None:
-                                not_found_report.append(f"Failed to download image: {media_url}")
-                                img_path = safe_download_and_convert_image(DEFAULT_PLACEHOLDER_IMG, temp_files)
+                            not_found_report.append(f"Failed to download image: {media_url}")
+                            continue
                         media_url_local = img_path
                     else:
                         media_url_local = media_url
@@ -645,32 +523,70 @@ else:
                         mp3_path = tmp_mp3.name
                         temp_files.append(mp3_path)
                     montage.append((media_type, media_url_local, mp3_path, sent))
-                if not montage:
-                    st.error("No valid scenes for the video.")
-                    st.stop()
+            else:
+                for idx in range(min(len(sentences), st.session_state["last_num_media"])):
+                    sent = sentences[idx]
+                    found = False
+                    media_type = "image"
+                    media_url = None
+                    for src in sources_selected:
+                        if src == "Pexels":
+                            res = search_pexels_photos_with_desc(sent, per_page=1)
+                            if res:
+                                media_type, media_url, desc = res[0]
+                                found = True
+                                break
+                        if src == "Pixabay":
+                            res = search_pixabay_photos_with_desc(sent, per_page=1)
+                            if res:
+                                media_type, media_url, desc = res[0]
+                                found = True
+                                break
+                        if src == "Unsplash":
+                            res = search_unsplash_photos_with_desc(sent, per_page=1)
+                            if res:
+                                media_type, media_url, desc = res[0]
+                                found = True
+                                break
+                        if src == "Wikimedia":
+                            res = search_wikimedia_photos_with_desc(sent, limit=1)
+                            if res:
+                                media_type, media_url, desc = res[0]
+                                found = True
+                                break
+                    if found and media_type == "image":
+                        img_path = safe_download_and_convert_image(media_url, temp_files)
+                        if img_path is None:
+                            not_found_report.append(f"Failed to download image: {media_url}")
+                            continue
+                        media_url = img_path
+                    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_mp3:
+                        safe_tts_save(sent, tmp_mp3.name, voice_data["lang"], voice_data["tld"])
+                        mp3_path = tmp_mp3.name
+                        temp_files.append(mp3_path)
+                    montage.append((media_type, media_url, mp3_path, sent))
+            if not montage:
+                st.error("No valid scenes for the video.")
+                st.stop()
 
-                with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_video:
-                    out_video_path = tmp_video.name
-                final_video, video_duration_sec, thumbnail_path = assemble_video(
-                    montage, out_path=out_video_path, color=color, text_size=text_size, text_pos=text_pos,
-                    logo_path=logo_path, music_path=music_path, watermark_text=watermark,
-                    gif_export=gif_export, square_export=square_export, youtube_export=youtube_export,
-                    vertical_export=vertical_export,
-                    text_anim_mode=text_anim_mode_val, text_anim_group_size=text_anim_group_size, text_anim_lang=text_anim_lang
-                )
-                st.success("Done! See your result 👇")
-                st.video(final_video)
-                st.info(f"Video duration: {video_duration_sec/60:.2f} min ({video_duration_sec:.1f} sec)")
-                if thumbnail_path and os.path.exists(thumbnail_path):
-                    st.image(thumbnail_path, caption="Thumbnail (AI Generated)")
-                    with open(thumbnail_path, "rb") as fthumb:
-                        st.download_button("Download Thumbnail", data=fthumb, file_name="thumbnail.jpg", mime="image/jpeg")
-                if not_found_report:
-                    st.warning("Failed to find media for some scenes:")
-                    st.markdown("\n".join(not_found_report))
-                with open(final_video, "rb") as f:
-                    st.download_button(label="Download Video", data=f, file_name="documentary_video.mp4", mime="video/mp4")
-            finally:
-                for f in temp_files:
-                    try: os.remove(f)
-                    except: pass
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_video:
+                out_video_path = tmp_video.name
+            final_video, video_duration_sec = assemble_video(
+                montage, out_path=out_video_path, color=color, text_size=text_size, text_pos=text_pos,
+                logo_path=logo_path, music_path=music_path, watermark_text=watermark,
+                gif_export=gif_export, square_export=square_export, youtube_export=youtube_export,
+                text_anim_mode=text_anim_mode_val, text_anim_group_size=text_anim_group_size, text_anim_lang=text_anim_lang
+            )
+            st.success("Done! See your result 👇")
+            st.video(final_video)
+            st.info(f"Video duration: {video_duration_sec/60:.2f} min ({video_duration_sec:.1f} sec)")
+            if not_found_report:
+                st.warning("Failed to find media for some scenes:")
+                st.markdown("\n".join(not_found_report))
+            with open(final_video, "rb") as f:
+                st.download_button(label="Download Video", data=f, file_name="documentary_video.mp4", mime="video/mp4")
+            for f in temp_files:
+                try:
+                    os.remove(f)
+                except Exception:
+                    pass
