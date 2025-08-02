@@ -1,12 +1,11 @@
 import os
-os.environ["IMAGEMAGICK_BINARY"] = "/usr/bin/convert"
 import streamlit as st
 import requests
 import tempfile
 import json
 import numpy as np
-from moviepy.editor import concatenate_videoclips, ImageClip, CompositeVideoClip, AudioFileClip, TextClip, concatenate_audioclips, VideoFileClip
-from PIL import Image
+from moviepy.editor import concatenate_videoclips, ImageClip, CompositeVideoClip, AudioFileClip, concatenate_audioclips, VideoFileClip
+from PIL import Image, ImageDraw, ImageFont
 import io
 from gtts import gTTS
 import nltk
@@ -175,32 +174,37 @@ def get_audio_duration(audio_path):
         return 2
 
 def animated_text_clip(img_clip, text, duration, lang="en", mode="sentence", group_size=1, font_size=40, color="white", text_pos="bottom"):
-    items = [text]
-    item_dur = duration
-    txt_clips = []
-    for i, item in enumerate(items):
-        font = "DejaVu-Sans"
-        if lang == "fr":
-            font = "Liberation-Serif"
-        txt = TextClip(
-            item, fontsize=font_size, color=color, font=font,
-            size=img_clip.size, method='caption', align='center'
-        ).set_duration(item_dur).set_start(i * item_dur)
-        margin = 30
-        try:
-            h = txt.h
-        except:
-            h = font_size + 10
-        if text_pos == "bottom":
-            txt = txt.set_position(("center", img_clip.h - h - margin))
-        elif text_pos == "top":
-            txt = txt.set_position(("center", margin))
-        elif text_pos == "center":
-            txt = txt.set_position("center")
-        else:
-            txt = txt.set_position(text_pos)
-        txt_clips.append(txt)
-    return CompositeVideoClip([img_clip] + txt_clips).set_duration(duration)
+    # تعديل: كتابة النص على الصورة باستخدام PIL بدل TextClip
+    img_path = img_clip.filename if hasattr(img_clip, 'filename') else None
+    if img_path is None:
+        img_path = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False).name
+        img_clip.save_frame(img_path, t=0)
+    image = Image.open(img_path).convert("RGB")
+    draw = ImageDraw.Draw(image)
+    try:
+        font = ImageFont.truetype("arial.ttf", font_size)
+    except:
+        font = ImageFont.load_default()
+    w, h = image.size
+    text_w, text_h = draw.textsize(text, font=font)
+    margin = 30
+    if text_pos == "bottom":
+        x = (w - text_w) // 2
+        y = h - text_h - margin
+    elif text_pos == "top":
+        x = (w - text_w) // 2
+        y = margin
+    elif text_pos == "center":
+        x = (w - text_w) // 2
+        y = (h - text_h) // 2
+    else:
+        x = (w - text_w) // 2
+        y = h - text_h - margin
+    draw.text((x, y), text, font=font, fill=color)
+    temp_img_path = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False).name
+    image.save(temp_img_path)
+    result_clip = ImageClip(temp_img_path).set_duration(duration)
+    return result_clip
 
 def resize_and_letterbox(img_clip, target_w=1280, target_h=720):
     img_clip = img_clip.resize(height=target_h)
@@ -337,10 +341,17 @@ def assemble_video(
             print(f"Music error: {e}")
     if watermark_text:
         try:
-            txt_clip = TextClip(
-                watermark_text, fontsize=24, color='white', font='DejaVu-Sans',
-                size=(200, 30)
-            ).set_duration(final_clip.duration).set_opacity(0.4)
+            # تعديل: استخدم ImageClip مكتوب عليه نص متحرك عبر PIL بدل TextClip
+            txt_img = Image.new("RGBA", (200, 30), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(txt_img)
+            try:
+                font = ImageFont.truetype("arial.ttf", 24)
+            except:
+                font = ImageFont.load_default()
+            draw.text((10, 0), watermark_text, font=font, fill="white")
+            temp_txt_img = tempfile.NamedTemporaryFile(suffix=".png", delete=False).name
+            txt_img.save(temp_txt_img)
+            txt_clip = ImageClip(temp_txt_img).set_duration(final_clip.duration).set_opacity(0.4)
             positions = random_watermark_positions(final_clip.duration, final_clip.w, final_clip.h, 200, 30, step=0.5)
             def moving_position(t):
                 idx = int(t // 0.5)
