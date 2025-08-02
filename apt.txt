@@ -1,3 +1,4 @@
 imagemagick
+ffmpeg
 fonts-dejavu
 fonts-liberation
