@@ -1,7 +1,9 @@
+import os
+os.environ["IMAGEMAGICK_BINARY"] = "/usr/bin/convert"
+
 import streamlit as st
 import requests
 import tempfile
-import os
 import json
 import numpy as np
 from moviepy.editor import concatenate_videoclips, ImageClip, CompositeVideoClip, AudioFileClip, TextClip, concatenate_audioclips, VideoFileClip
@@ -178,7 +180,7 @@ def animated_text_clip(img_clip, text, duration, lang="en", mode="sentence", gro
     item_dur = duration
     txt_clips = []
     for i, item in enumerate(items):
-        font = "Arial"
+        font = "DejaVu-Sans"
         if lang == "fr":
             font = "Liberation-Serif"
         txt = TextClip(
@@ -337,7 +339,7 @@ def assemble_video(
     if watermark_text:
         try:
             txt_clip = TextClip(
-                watermark_text, fontsize=24, color='white', font='Arial-Bold',
+                watermark_text, fontsize=24, color='white', font='DejaVu-Sans',
                 size=(200, 30)
             ).set_duration(final_clip.duration).set_opacity(0.4)
             positions = random_watermark_positions(final_clip.duration, final_clip.w, final_clip.h, 200, 30, step=0.5)
