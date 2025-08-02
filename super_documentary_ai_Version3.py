@@ -292,7 +292,7 @@ def assemble_video(
             if isinstance(img_path, str) and img_path.startswith("http"):
                 img_path = safe_download_and_convert_image(img_path, temp_files)
                 if img_path is None:
-                    continue  # تخطى الصورة التالفة
+                    continue
             img_clip = ImageClip(img_path)
             img_clip = resize_and_letterbox(img_clip, target_w=1280, target_h=720)
             img_clip = img_clip.set_duration(duration)
