@@ -26,7 +26,7 @@ PIXABAY_API_KEY = "50380897-76243eaec536038f687ff8e15"
 COHERE_API_KEY = "K1GW0y2wWiwW7xlK7db7zZnqX7sxfRVGiWopVfCD"
 
 # ضع مفتاح DeepAI الخاص بك هنا (سجّل مجاناً في https://deepai.org/)
-DEEPAI_API_KEY = "YOUR_DEEPAI_API_KEY"  # <--- ضع مفتاحك هنا
+DEEPAI_API_KEY = "790f1607-c5ea-4f10-b116-59ceadd77c25"
 
 GTTS_VOICES = [
     {"name": "English (US) - Female", "lang": "en", "tld": "com"},
@@ -39,10 +39,6 @@ GTTS_VOICES = [
 DEFAULT_PLACEHOLDER_IMG = "https://upload.wikimedia.org/wikipedia/commons/6/65/No-Image-Placeholder.svg"
 
 def generate_thumbnail_image(prompt, temp_files):
-    """
-    Uses DeepAI's text-to-image API to generate a thumbnail image based on the prompt.
-    Requires a free API key from https://deepai.org/
-    """
     if not DEEPAI_API_KEY or DEEPAI_API_KEY == "YOUR_DEEPAI_API_KEY":
         print("DeepAI API key missing, cannot generate thumbnail.")
         return None
@@ -577,7 +573,16 @@ else:
         st.markdown("#### 📸 Scene order (drag to reorder):")
         media_list = st.session_state["media_list"]
         scene_order = st.session_state.get("scene_order", list(range(len(media_list))))
+        # تأكد من الطول
+        if len(scene_order) != len(media_list):
+            scene_order = list(range(len(media_list)))
+            st.session_state["scene_order"] = scene_order
+        if not media_list or len(media_list) == 0:
+            st.warning("No media found for this project. Please generate media first.")
+            st.stop()
         for idx, scene_idx in enumerate(scene_order):
+            if scene_idx >= len(media_list):
+                continue
             c1, c2, c3 = st.columns([7,1,1])
             with c1:
                 m = media_list[scene_idx]
