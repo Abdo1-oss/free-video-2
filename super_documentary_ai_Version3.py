@@ -1,6 +1,6 @@
 import os
 import streamlit as st
-import requests
+import requests 
 import tempfile
 import json
 from moviepy.editor import concatenate_videoclips, ImageClip, CompositeVideoClip, AudioFileClip, concatenate_audioclips, VideoFileClip
@@ -65,7 +65,6 @@ def search_pexels_videos_with_desc(query, per_page=1):
         data = requests.get(url, headers=headers, timeout=10).json()
         result = []
         for v in data.get("videos", []):
-            # اختار الفيديو بأكبر دقة متاحة
             best_file = max(v.get("video_files", []), key=lambda x: x.get("width", 0), default=None)
             if best_file:
                 result.append(("video", best_file["link"], v.get("url", query), best_file.get("width",1280), best_file.get("height",720)))
@@ -117,7 +116,6 @@ def search_wikimedia_photos_with_desc(query, limit=1):
         for v in pages.values():
             img_url = v.get("imageinfo", [{}])[0].get("url")
             desc = v.get("title", query)
-            # Wikimedia لا توفر أبعاد، افترض 1280x720
             if img_url:
                 result.append(("image", img_url, desc, 1280, 720))
         return result
@@ -215,17 +213,14 @@ def draw_text_groups_on_image(img_path, text, font_size=40, color="white", posit
     return imgs
 
 def resize_and_letterbox_clip(clip, target_w=1280, target_h=720):
-    # قص أو تمديد الصورة/الفيديو كي يكون بدون مناطق سوداء
     iw, ih = clip.size
     tw, th = target_w, target_h
     aspect_ratio_in = iw/ih
     aspect_ratio_out = tw/th
     if aspect_ratio_in > aspect_ratio_out:
-        # قص العرض
         new_w = int(ih * aspect_ratio_out)
         clip = clip.crop(x_center=iw/2, width=new_w)
     elif aspect_ratio_in < aspect_ratio_out:
-        # قص الطول
         new_h = int(iw / aspect_ratio_out)
         clip = clip.crop(y_center=ih/2, height=new_h)
     clip = clip.resize((tw, th))
@@ -233,7 +228,14 @@ def resize_and_letterbox_clip(clip, target_w=1280, target_h=720):
 
 def animated_text_clip(img_clip, text, duration, lang="en", group_size=3, font_size=40, color="white", text_pos="bottom"):
     # كتابة النص كل ثلاث كلمات معًا، كل مجموعة تظهر لمدة متساوية
-    temp_img_paths = draw_text_groups_on_image(img_clip.filename if hasattr(img_clip,'filename') else img_clip.save_frame(tempfile.NamedTemporaryFile(suffix=".jpg",delete=False).name, t=0), text, font_size, color, text_pos, group_size)
+    if hasattr(img_clip, 'filename'):
+        img_path = img_clip.filename
+    else:
+        temp_img = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+        img_clip.save_frame(temp_img.name, t=0)
+        img_path = temp_img.name
+
+    temp_img_paths = draw_text_groups_on_image(img_path, text, font_size, color, text_pos, group_size)
     n = len(temp_img_paths)
     clips = []
     for i, img_path in enumerate(temp_img_paths):
@@ -243,7 +245,6 @@ def animated_text_clip(img_clip, text, duration, lang="en", group_size=3, font_s
     return concatenate_videoclips(clips)
 
 def animated_text_video_clip(video_clip, text, duration, lang="en", group_size=3, font_size=40, color="white", text_pos="bottom"):
-    # كتابة النص على الفيديو كل ثلاث كلمات، كل مجموعة تظهر على جزء من الفيديو
     lines = split_text_by_group(text, group_size)
     n = len(lines)
     subclips = []
@@ -254,7 +255,6 @@ def animated_text_video_clip(video_clip, text, duration, lang="en", group_size=3
         sub.save_frame(frame_img_path, t=0)
         img_clip = ImageClip(draw_text_groups_on_image(frame_img_path, line, font_size, color, text_pos, group_size)[0]).set_duration(sub_duration)
         img_clip = resize_and_letterbox_clip(img_clip)
-        # مركب الفيديو الأصلي مع النص على الصورة الثابتة
         merged = CompositeVideoClip([sub, img_clip.set_opacity(0.7)])
         subclips.append(merged)
     return concatenate_videoclips(subclips)
