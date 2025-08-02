@@ -1,6 +1,5 @@
 import os
 os.environ["IMAGEMAGICK_BINARY"] = "/usr/bin/convert"
-
 import streamlit as st
 import requests
 import tempfile
