@@ -96,26 +96,22 @@ def get_media_alternative(query, exclude_sources=[], per_page=1):
     return ("image", DEFAULT_PLACEHOLDER_IMG, "No image found")
 
 def search_pexels_photos_with_desc(query, per_page=1):
-    print(f"DEBUG: search_pexels_photos_with_desc: query={query}, per_page={per_page}")
     if not PEXELS_API_KEY: return []
     headers = {"Authorization": PEXELS_API_KEY}
     url = f"https://api.pexels.com/v1/search?query={query}&per_page={per_page}"
     try:
         data = requests.get(url, headers=headers, timeout=10).json()
-        print("DEBUG: Pexels API response:", data)
         return [("image", photo["src"]["large"], photo.get("alt") or query) for photo in data.get("photos", [])]
     except Exception as e:
         print(f"Pexels photos error: {e}")
         return []
 
 def search_pexels_videos_with_desc(query, per_page=1):
-    print(f"DEBUG: search_pexels_videos_with_desc: query={query}, per_page={per_page}")
     if not PEXELS_API_KEY: return []
     headers = {"Authorization": PEXELS_API_KEY}
     url = f"https://api.pexels.com/videos/search?query={query}&per_page={per_page}"
     try:
         data = requests.get(url, headers=headers, timeout=10).json()
-        print("DEBUG: Pexels Videos API response:", data)
         result = []
         for v in data.get("videos", []):
             if v.get("video_files"):
@@ -126,48 +122,40 @@ def search_pexels_videos_with_desc(query, per_page=1):
         return []
 
 def search_unsplash_photos_with_desc(query, per_page=1):
-    print(f"DEBUG: search_unsplash_photos_with_desc: query={query}, per_page={per_page}")
     if not UNSPLASH_ACCESS_KEY: return []
     url = f"https://api.unsplash.com/search/photos?query={query}&per_page={per_page}&client_id={UNSPLASH_ACCESS_KEY}"
     try:
         data = requests.get(url, timeout=10).json()
-        print("DEBUG: Unsplash API response:", data)
         return [("image", photo["urls"]["regular"], photo.get("alt_description") or query) for photo in data.get("results", [])]
     except Exception as e:
         print(f"Unsplash error: {e}")
         return []
 
 def search_pixabay_photos_with_desc(query, per_page=1):
-    print(f"DEBUG: search_pixabay_photos_with_desc: query={query}, per_page={per_page}")
     if not PIXABAY_API_KEY: return []
     url = f"https://pixabay.com/api/?key={PIXABAY_API_KEY}&q={query}&per_page={per_page}&image_type=photo"
     try:
         data = requests.get(url, timeout=10).json()
-        print("DEBUG: Pixabay Photos API response:", data)
         return [("image", hit["largeImageURL"], hit.get("tags", query)) for hit in data.get("hits", [])]
     except Exception as e:
         print(f"Pixabay error: {e}")
         return []
 
 def search_pixabay_videos_with_desc(query, per_page=1):
-    print(f"DEBUG: search_pixabay_videos_with_desc: query={query}, per_page={per_page}")
     if not PIXABAY_API_KEY: return []
     url = f"https://pixabay.com/api/videos/?key={PIXABAY_API_KEY}&q={query}&per_page={per_page}"
     try:
         data = requests.get(url, timeout=10).json()
-        print("DEBUG: Pixabay Videos API response:", data)
         return [("video", v["videos"]["medium"]["url"], v.get("tags", query)) for v in data.get("hits", []) if "videos" in v]
     except Exception as e:
         print(f"Pixabay videos error: {e}")
         return []
 
 def search_wikimedia_photos_with_desc(query, limit=1):
-    print(f"DEBUG: search_wikimedia_photos_with_desc: query={query}, limit={limit}")
     url = f"https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch={query}&gsrlimit={limit}&prop=imageinfo|description&iiprop=url&format=json"
     try:
         response = requests.get(url, timeout=10)
         data = response.json()
-        print("DEBUG: Wikimedia API response:", data)
         pages = data.get("query", {}).get("pages", {})
         result = []
         for v in pages.values():
@@ -181,7 +169,6 @@ def search_wikimedia_photos_with_desc(query, limit=1):
         return []
 
 def generate_script_with_cohere(prompt, max_tokens=1000, temperature=0.7, model="command"):
-    print(f"DEBUG: generate_script_with_cohere: prompt={prompt}")
     url = "https://api.cohere.ai/v1/generate"
     headers = {
         "Authorization": f"Bearer {COHERE_API_KEY}",
@@ -194,7 +181,6 @@ def generate_script_with_cohere(prompt, max_tokens=1000, temperature=0.7, model=
         "temperature": temperature
     }
     response = requests.post(url, headers=headers, json=data)
-    print("DEBUG: Cohere API response:", response.status_code, response.text)
     if response.status_code == 200:
         return response.json()["generations"][0]["text"]
     else:
@@ -473,12 +459,6 @@ def assemble_video(
 st.set_page_config(page_title="AI Documentary Generator", layout="wide")
 st.title("🎬 AI Documentary Generator (Images, Video, Voice-over)")
 
-print("DEBUG: PEXELS_API_KEY:", PEXELS_API_KEY)
-print("DEBUG: UNSPLASH_ACCESS_KEY:", UNSPLASH_ACCESS_KEY)
-print("DEBUG: PIXABAY_API_KEY:", PIXABAY_API_KEY)
-print("DEBUG: COHERE_API_KEY:", COHERE_API_KEY)
-print("DEBUG: DEEPAI_API_KEY:", DEEPAI_API_KEY)
-
 mode = st.radio("Project Type", ["New Project", "Restore Project"])
 
 if mode == "Restore Project":
@@ -531,9 +511,6 @@ else:
         st.session_state["scene_order"] = list(range(num_media))
 
     if st.button("Generate!"):
-        print("DEBUG: topic:", topic)
-        print("DEBUG: sources_selected:", sources_selected)
-        print("DEBUG: num_media:", num_media)
         progress_bar = st.progress(0, text="Starting ...")
         if script_mode == "Write script manually" and not script_text.strip():
             st.error("Please enter the script text.")
@@ -562,11 +539,9 @@ else:
                             photos += search_wikimedia_photos_with_desc(topic, limit=n_each*2)
                     total_media = videos[:num_media] + photos[:max(0, num_media-len(videos))]
                     media_list = total_media[:num_media]
-                    print("DEBUG: media_list =", media_list)
                     if not media_list or len(media_list) == 0:
                         st.warning("لم يتم العثور على صور أو فيديوهات لهذا الموضوع. جرب كتابة الموضوع بالإنجليزية أو اختر موضوعًا شائعًا.")
                         media_list = [("image", DEFAULT_PLACEHOLDER_IMG, "Placeholder Image") for _ in range(num_media)]
-                    # تحديث scene_order لمطابقة media_list دومًا
                     st.session_state["media_list"] = media_list
                     st.session_state["scene_order"] = list(range(len(media_list)))
                     for i, (media_type, url, desc) in enumerate(media_list):
@@ -604,7 +579,6 @@ else:
             st.session_state["media_list"] = media_list
             scene_order = list(range(len(media_list)))
             st.session_state["scene_order"] = scene_order
-        # حماية من الخروج عن حدود القائمة
         for idx, scene_idx in enumerate(scene_order):
             if scene_idx >= len(media_list):
                 continue
@@ -622,13 +596,13 @@ else:
                     if st.button("⬆️", key=f"up{idx}"):
                         scene_order[idx-1], scene_order[idx] = scene_order[idx], scene_order[idx-1]
                         st.session_state["scene_order"] = scene_order
-                        st.experimental_rerun()
+                        st.rerun()
             with c3:
                 if idx < len(scene_order)-1:
                     if st.button("⬇️", key=f"down{idx}"):
                         scene_order[idx+1], scene_order[idx] = scene_order[idx], scene_order[idx+1]
                         st.session_state["scene_order"] = scene_order
-                        st.experimental_rerun()
+                        st.rerun()
         if st.button("Build video / Rebuild after edit"):
             temp_files = []
             try:
