@@ -5,7 +5,7 @@ import os
 import json
 import numpy as np
 from moviepy.editor import concatenate_videoclips, ImageClip, CompositeVideoClip, AudioFileClip, TextClip, concatenate_audioclips, VideoFileClip
-from PIL import Image
+from PIL import Image 
 import io
 from gtts import gTTS
 import nltk
@@ -565,10 +565,10 @@ else:
                     print("DEBUG: media_list =", media_list)
                     if not media_list or len(media_list) == 0:
                         st.warning("لم يتم العثور على صور أو فيديوهات لهذا الموضوع. جرب كتابة الموضوع بالإنجليزية أو اختر موضوعًا شائعًا.")
-                        # تجربة: توليد صور افتراضية حتى تتأكد من صلاحية الكود
                         media_list = [("image", DEFAULT_PLACEHOLDER_IMG, "Placeholder Image") for _ in range(num_media)]
-                        st.session_state["media_list"] = media_list
-                        st.session_state["scene_order"] = list(range(len(media_list)))
+                    # تحديث scene_order لمطابقة media_list دومًا
+                    st.session_state["media_list"] = media_list
+                    st.session_state["scene_order"] = list(range(len(media_list)))
                     for i, (media_type, url, desc) in enumerate(media_list):
                         if media_type == "image":
                             st.image(url, caption=f"{i+1}. {desc}")
@@ -585,9 +585,8 @@ else:
                 else:
                     final_text = script_text.strip()
                 st.session_state["editable_script"] = final_text
-                st.session_state["media_list"] = media_list
                 st.session_state["last_num_media"] = num_media
-                st.session_state["scene_order"] = list(range(num_media))
+                st.session_state["scene_order"] = list(range(len(st.session_state["media_list"])))
 
     if st.session_state.get("editable_script", ""):
         st.markdown("### ✏️ Edit the script, then click Build Video:")
@@ -605,6 +604,7 @@ else:
             st.session_state["media_list"] = media_list
             scene_order = list(range(len(media_list)))
             st.session_state["scene_order"] = scene_order
+        # حماية من الخروج عن حدود القائمة
         for idx, scene_idx in enumerate(scene_order):
             if scene_idx >= len(media_list):
                 continue
@@ -613,8 +613,10 @@ else:
                 m = media_list[scene_idx]
                 if m[0] == "image":
                     st.image(m[1], caption=f"{idx+1}. {m[2]}")
-                else:
+                elif m[0] == "video":
                     st.video(m[1], format="video/mp4", start_time=0)
+                else:
+                    st.warning("Unsupported media type.")
             with c2:
                 if idx > 0:
                     if st.button("⬆️", key=f"up{idx}"):
@@ -647,7 +649,7 @@ else:
                         temp_files.append(music_path)
                 montage = []
                 not_found_report = []
-                ordered_media_list = [media_list[i] for i in st.session_state["scene_order"]]
+                ordered_media_list = [media_list[i] for i in st.session_state["scene_order"] if i < len(media_list)]
                 script_mode_cur = script_mode if script_mode != "" else "AI-generated script (Cohere)"
                 for idx in range(min(len(sentences), len(ordered_media_list))):
                     sent = sentences[idx]
